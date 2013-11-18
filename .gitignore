@@ -1,0 +1,18 @@
+*.omc
+.omakedb
+.omakedb.lock
+
+# GCC
+*.[oa]
+*.so
+
+# OCaml
+*.cm*
+*.annot
+*.run
+*.opt
+*.dll
+
+# Emacs
+*~
+

@@ -1,0 +1,76 @@
+# setenv( OCAMLPATH, /home/mika/edog/dawg )
+USE_OCAMLFIND = true
+
+NATIVE_ENABLED = true
+BYTE_ENABLED = true
+
+OCAMLFLAGS  += -dtypes
+OCAMLPACKS[] += unix bigarray atdgen lwt.syntax csv pcre cmdliner mikmatch_pcre
+OCAMLOPTFLAGS += -inline 100
+OCAMLFINDFLAGS += -syntax camlp4o
+
+tS_t.mli tS_b.mli tS_t.ml tS_b.ml: tS.atd
+        atdgen -t $<
+        atdgen -b $<
+
+dog_t.mli dog_b.mli dog_j.mli dog_t.ml dog_b.ml dog_j.ml: dog.atd
+        atdgen -t $<
+        atdgen -b $<
+        atdgen -j -j-std $<
+
+model_t.mli model_b.mli model_j.mli model_t.ml model_b.ml model_j.ml: model.atd
+        atdgen -t $<
+        atdgen -b $<
+        atdgen -j -j-std $<
+
+FILES[] =
+  utils
+  iter_literal
+  split
+  tS_t
+  tS_b
+  stream_merge
+  heap
+  dog_t
+  dog_b
+  dog_j
+  dog_io
+  binary_search
+  main
+  csv2dog
+  dog_inspect
+  feat_map
+  feat_utils
+  rlevec
+  uInt8Array
+  rle
+  vec
+  logistic
+  loss
+  sgbt
+  learn
+  tree
+  sampler
+  rls1
+  model_t
+  model_b
+  model_j
+  model_utils
+  eval
+  bi_metrics
+  roc
+  square
+  gen_code
+  calc
+
+.DEFAULT: \
+   $(OCamlProgram dawg , $(FILES) ) \
+   $(OCamlProgram t_rlevec , test_rlevec $(FILES) ) \
+   $(OCamlProgram t_sm , test_stream_merge stream_merge heap ) \
+   $(OCamlProgram t_rle, test_rle rle utils ) \
+   $(OCamlProgram t_xyz, test_xyz )
+
+.PHONY: clean
+
+clean:
+        rm -f $(filter-proper-targets $(ls R, .)) *.s *.annot

@@ -1,0 +1,9 @@
+(* cells: all triples consist of column index, row index, and value *)
+type int_cell = (int * int * int)
+type float_cell = (int * int * float)
+type string_cell = (int * int * string)
+
+(* feature histogram entries: feature id [0,inf] , count [1, inf] and value *)
+type int_histogram_entry = (int * int * int)
+type float_histogram_entry = (int * float * int)
+type string_histogram_entry = (int * string * int)

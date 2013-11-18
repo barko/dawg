@@ -1,0 +1,54 @@
+(** fundamental dog types *)
+
+type category = string
+type feature_id = int
+type feature_name = string
+
+(* fst is byte width *)
+type ('rle, 'dense) vector = [ RLE of 'rle | Dense of 'dense ]
+type breakpoints = [ Int of int list | Float of float list ]
+
+type ('rle, 'dense) ord_feature = {
+  o_feature_id : feature_id;
+  o_feature_name_opt : feature_name option;
+  (* number of distinct values, equals length of [o_breakpoints] *)
+  o_cardinality : int;
+  o_breakpoints : breakpoints;
+  o_vector : ('rle, 'dense) vector;
+}
+
+type ('rle, 'dense) cat_feature = {
+  c_feature_id : feature_id;
+  c_feature_name_opt : feature_name option;
+  (* length of [c_categories] (plus one, of there's an anonymous category *)
+  c_cardinality : int;
+  c_categories : category list;
+  c_anonymous_category : int option;
+  c_vector : ('rle, 'dense) vector
+}
+
+(* byte offset into the Dog file in which a vector is serialized *)
+type vector_id = int
+
+(* types encoded in a dog file; Here, we use a record of lists of
+   diverse types, rather than a variant type that unifies them.  We do
+   this in order to eliminate the overhead required for variant tags
+   (4 bytes per feature). We also use biniou tables to represent lists
+   of records, to further make the representaiton as compact as
+   possible.  *)
+type features = {
+  cat_a : (vector_id , vector_id) cat_feature   list <biniou repr="table">;
+  ord_a : (vector_id , vector_id) ord_feature   list <biniou repr="table">;
+}
+
+type t = {
+  features : features;
+  num_observations : int;
+}
+
+type ('rle, 'dense) feature = [
+  | Cat of ('rle, 'dense) cat_feature
+  | Ord of ('rle, 'dense) ord_feature
+]
+
+type ifeature = (vector_id , vector_id) feature

@@ -1,0 +1,19 @@
+USE_OCAMLFIND = true
+
+NATIVE_ENABLED = true
+BYTE_ENABLED = true
+
+OCAMLFLAGS  += -dtypes
+
+FILES[] = csv_lexer csv_parser csv_io csv_types
+LIBS = csv
+OCAML_LIBS = csv
+
+.DEFAULT: \
+  $(OCamlLibrary csv, $(FILES) ) \
+  $(OCamlProgram csvcat , csvcat )
+
+.PHONY: clean
+
+clean:
+        rm -f $(filter-proper-targets $(ls R, .)) *.s *.annot

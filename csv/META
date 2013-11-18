@@ -1,0 +1,4 @@
+description = "csv - parse csv files"
+version = "1.0"
+archive(byte) = "csv.cma"
+archive(native) = "csv.cmxa"
