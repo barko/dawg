@@ -1,0 +1,28 @@
+# setenv( OCAMLPATH, /home/mika/edog/dawg )
+USE_OCAMLFIND = true
+
+NATIVE_ENABLED = true
+BYTE_ENABLED = true
+
+OCAMLFLAGS  += -dtypes
+OCAMLPACKS[] += atdgen mikmatch_pcre
+OCAMLOPTFLAGS += -inline 100
+
+model_t.mli model_b.mli model_j.mli model_t.ml model_b.ml model_j.ml: model.atd
+        atdgen -t $<
+        atdgen -b $<
+        atdgen -j -j-std $<
+
+FILES[] =
+  model_t
+  model_b
+  model_j
+  eval
+
+.DEFAULT: \
+   $(OCamlLibrary eigendog , $(FILES) )
+
+.PHONY: clean
+
+clean:
+        rm -f $(filter-proper-targets $(ls R, .)) *.s *.annot
