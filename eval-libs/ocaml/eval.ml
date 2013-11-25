@@ -9,7 +9,7 @@ let rec eval_tree get = function
   | `OrdinalNode { on_feature_id; on_split; on_left_tree; on_right_tree } ->
     assert ( on_feature_id >= 0 );
     let value =
-      match get on_feature_id with
+      match get `ORD on_feature_id with
         | `Float value -> value
         | `String _ -> assert false (* type mismatch would have been raised *)
     in
@@ -29,7 +29,7 @@ let rec eval_tree get = function
     } ->
     assert ( cn_feature_id >= 0 );
     let value =
-      match get cn_feature_id with
+      match get `CAT cn_feature_id with
         | `String index -> cn_category_directions.(index)
         | `Float _ -> assert false (* type mismatch would have been raised *)
     in
@@ -127,7 +127,7 @@ type feature = [
   | `CategoricalFeature of categorical_feature
 ]
 
-type sq = {
+type square = {
   trees : (float, direction_array) Model_t.tree list;
   num_features : int;
   id_to_feature : (int, feature) Hashtbl.t;
@@ -190,20 +190,27 @@ type feature_value = [ `Float of float | `String of string ]
 exception FeatureNotFound of feature_key
 exception TypeMismatch of (feature_key * feature_value)
 exception CategoryNotFound of (feature_key * string)
+exception CategoryMissing of feature_key
 
 type feature_vector = (feature_key * feature_value) list
 
-let square_eval sq feature_vector =
+let eval_square sq feature_vector =
+  (* build a map from integer feature id to feature value for all
+     features values provided in [feature_vector].  Check that the
+     feature values provided in [feature_vector] are actually required
+     in the model. Check that categories (values of a categorical
+     feature) are ones known in the model. *)
   let id_to_feature = Hashtbl.create sq.num_features in
+
   List.iter (
     fun (key, value) ->
       let feature =
         match key with
           | `Id feature_id -> (
-            try
-              Hashtbl.find sq.id_to_feature feature_id
-            with Not_found ->
-              raise (FeatureNotFound key)
+              try
+                Hashtbl.find sq.id_to_feature feature_id
+              with Not_found ->
+                raise (FeatureNotFound key)
             )
           | `Name feature_name ->
             try
@@ -228,7 +235,24 @@ let square_eval sq feature_vector =
 
   ) feature_vector;
 
-  let get = Hashtbl.find id_to_feature in
+  let get kind feature_id =
+    try
+      Hashtbl.find id_to_feature feature_id
+    with Not_found ->
+      match kind with
+        | `ORD ->
+          (* implicit value is zero *)
+          `Float 0.0
+
+        | `CAT ->
+          match Hashtbl.find sq.id_to_feature feature_id with
+            | `OrdinalFeature _ -> assert false
+            | `CategoricalFeature cat ->
+              (* is this categorical feature have an anonymous category? *)
+              match cat.cf.cf_anonymous_category_index_opt with
+                | Some cat_id -> (`String cat_id)
+                | None -> raise (CategoryMissing (`Id feature_id))
+  in
   eval_trees get sq.trees
 
 let logistic_evaluator model_file_path =
