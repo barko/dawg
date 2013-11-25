@@ -1,4 +1,3 @@
-# setenv( OCAMLPATH, /home/mika/edog/dawg )
 USE_OCAMLFIND = true
 
 NATIVE_ENABLED = true
@@ -19,8 +18,10 @@ FILES[] =
   model_j
   eval
 
+OCAML_LIBS = eigendog
 .DEFAULT: \
-   $(OCamlLibrary eigendog , $(FILES) )
+   $(OCamlLibrary eigendog , $(FILES) ) \
+   $(OCamlProgram example , example )
 
 .PHONY: clean
 

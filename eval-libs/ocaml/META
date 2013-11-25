@@ -1,0 +1,5 @@
+description = "eigendog - evaluate EigenDog model files"
+version = "1.0"
+requires = "atdgen mikmatch_pcre"
+archive(byte) = "eigendog.cma"
+archive(native) = "eigendog.cmxa"

@@ -1,7 +1,11 @@
 type square
-val square_evaluator : string -> square
-(* [square_evaluator path] create a regression model evaluator from a
-   model file at [path]. *)
+type logistic
+
+type evaluator = [ `Square of square | `Logistic of logistic ]
+
+val create : string -> evaluator
+(* [create path] create a model evaluator from a model file at
+   [path]. *)
 
 type feature_key = [ `Id of int | `Name of string ]
 type feature_value = [ `Float of float | `String of string ]
@@ -36,6 +40,13 @@ exception CategoryMissing of feature_key
    feature.  Note that [`Float 0.0] is the default value of ordinal
    features. *)
 
-val eval_square : square -> feature_vector -> float
+val eval : evaluator -> feature_vector -> float
+(* evaluate the model using over input [feature_vector] *)
 
-val logistic_evaluator : 'a -> unit
+val positive_category : logistic -> string
+(* return the positive category; without inversion (through the
+   [invert] function), this is the category associated with
+   probability equal to one. *)
+
+val invert : logistic -> logistic
+(* invert the polarity of the logistic model *)

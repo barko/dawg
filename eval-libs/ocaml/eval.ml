@@ -163,26 +163,75 @@ let add_category_to_id features =
         `CategoricalFeature (add_category_to_id cat)
   ) features
 
-let square_evaluator model_file_path =
+type logistic = {
+  sq : square;
+  positive_category : string;
+  invert : bool;
+}
+
+type evaluator = [ `Logistic of logistic | `Square of square ]
+
+let index_features features num_features =
+  let id_to_feature = Hashtbl.create num_features in
+  let name_to_feature = Hashtbl.create num_features in
+  List.iter (
+    fun feature ->
+      match feature with
+        | `OrdinalFeature { of_feature_id; of_feature_name_opt } -> (
+            Hashtbl.replace id_to_feature of_feature_id feature;
+            match of_feature_name_opt with
+              | Some feature_name ->
+                Hashtbl.replace name_to_feature feature_name feature
+
+              | None -> ()
+          )
+
+        | `CategoricalFeature {cf = { cf_feature_id; cf_feature_name_opt }} -> (
+            Hashtbl.replace id_to_feature cf_feature_id feature;
+            match cf_feature_name_opt with
+              | Some feature_name ->
+                Hashtbl.replace name_to_feature feature_name feature
+
+              | None -> ()
+          )
+
+  ) features;
+  id_to_feature, name_to_feature
+
+let create model_file_path =
   (* the the contents of the file into a string *)
   let model_s = Mikmatch.Text.file_contents model_file_path in
   (* parse the string into a model *)
   let model = Model_j.c_model_of_string model_s in
-  let square =
-    match model with
-      | `Square square -> square
-      | `Logistic _ -> failwith "expecting regression model"
-  in
-  let trees = rle_to_array square.re_trees in
-  let features = add_category_to_id square.Model_t.re_features in
+  match model with
+    | `Square square ->
+      let trees = rle_to_array square.re_trees in
+      let features = add_category_to_id square.Model_t.re_features in
 
-  (* used in correctly sizing the [Hashtbl] in the [eval_*] fuctions *)
-  let num_features = List.length features in
+      (* used in correctly sizing the [Hashtbl] in the [eval_*] fuctions *)
+      let num_features = List.length features in
 
-  let id_to_feature = Hashtbl.create num_features in
-  let name_to_feature = Hashtbl.create num_features in
+      let id_to_feature, name_to_feature =
+        index_features features num_features in
 
-  { trees ; num_features; id_to_feature; name_to_feature }
+      `Square { trees ; num_features; id_to_feature; name_to_feature }
+
+    | `Logistic logistic ->
+      let trees = rle_to_array logistic.bi_trees in
+      let features = add_category_to_id logistic.Model_t.bi_features in
+
+      let num_features = List.length features in
+
+      let id_to_feature, name_to_feature =
+        index_features features num_features in
+
+      let sq = { trees ; num_features; id_to_feature; name_to_feature } in
+      let positive_category = logistic.bi_positive_category in
+      `Logistic { sq; positive_category; invert = false }
+
+(* invert the polarity of the classifier *)
+let invert logistic =
+  { logistic with invert = not logistic.invert }
 
 type feature_key = [ `Id of int | `Name of string ]
 type feature_value = [ `Float of float | `String of string ]
@@ -255,5 +304,21 @@ let eval_square sq feature_vector =
   in
   eval_trees get sq.trees
 
-let logistic_evaluator model_file_path =
-  ()
+let logistic_probability f =
+  let f2 = -2.0 *. f in
+  let ef2 = exp f2 in
+  1. /. ( 1. +. ef2 )
+
+let eval evaluator feature_vector =
+  match evaluator with
+    | `Square sq -> eval_square sq feature_vector
+    | `Logistic { sq; invert } ->
+      let f = eval_square sq feature_vector in
+      let p = logistic_probability f in
+      if invert then
+        1. -. p
+      else
+        p
+
+let positive_category { positive_category } =
+  positive_category
