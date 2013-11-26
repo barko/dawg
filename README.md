@@ -97,7 +97,7 @@ dawg eval -i test.csv -m file.mod -p predictions.txt --importance report.txt
 In this example, the file `predictions.txt` contains the output of the
 model, one value per line, corresponding to each sample in file
 `test.csv` .  For binary classifier, these values represent
-probabilities.  The output file 'report.txt' contains various
+probabilities.  The output file `report.txt` contains various
 importance metrics for each of the features included in the model, in
 descending order of importance.
 
