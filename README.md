@@ -74,12 +74,13 @@ command-line.
 Example:
 
 ```
-dawg learn -i file.dog -o file.mod -r 0.01 -d 3 -l logistic
+dawg learn -i file.dog -o file.mod -r 0.01 -d 3 -l logistic -y gender
 ```
 
-This learns a binary classifier over training set `file.dog`, with a
-learning rate of 0.01 and a maximum tree depth of 3.  Once `dawg` has
-converged, it creates the output model file `file.mod` .
+This learns a binary classifier over training set `file.dog` for
+binary target `gender`, with a learning rate of 0.01 and a maximum tree
+depth of 3.  Once `dawg` has converged, it creates the output model
+file `file.mod` .
 
 ## evaluating models
 
