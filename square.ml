@@ -6,7 +6,7 @@ type metrics = {
 }
 
 let loss { loss } =
-  loss
+  loss, true
 
 type model = Model_t.l_regression_model
 

@@ -4,20 +4,18 @@ let pr = Printf.printf
 
 let random_seed = [| 9271 ; 12074; 3; 12921; 92; 763 |]
 
-type feature_descr = [`Name of string | `Id of int ]
-
 type conf = {
   dog_file_path : string;
   num_folds : int;
   min_convergence_rate : float;
   initial_learning_rate : float;
-  y : feature_descr;
+  y : Feat_map.feature_descr;
   max_depth : int;
   convergence_rate_smoother_forgetful_factor : float;
   deadline : float option;
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
-  fold_feature_opt : feature_descr option;
+  fold_feature_opt : Feat_map.feature_descr option;
   max_trees_opt : int option;
   map_target_opt : Calc.map option;
 }
@@ -132,7 +130,7 @@ module Make ( L : Loss.LOSS ) = struct
           | `Ok ->
             let wrk_metrics, val_metrics = wrk_and_val_metrics t.splitter
                 iteration.fold_set in
-            let val_loss = L.loss val_metrics in
+            let val_loss, has_converged = L.loss val_metrics in
 
             (* compute convergence rate and smooth it *)
             let convergence_rate =
@@ -149,7 +147,11 @@ module Make ( L : Loss.LOSS ) = struct
               convergence_rate
               convergence_rate_hat;
 
-            if val_loss >= 2.0 *. iteration.prev_loss then (
+            if has_converged then (
+              pr " converged: metrics inidicate continuing is pointless";
+              `Converged (iteration.learning_rate, iteration.trees)
+            )
+            else if val_loss >= 2.0 *. iteration.prev_loss then (
               pr "diverged: loss rose dramatically!\n";
               cut_learning_rate conf t iteration
             )
@@ -208,7 +210,7 @@ module Make ( L : Loss.LOSS ) = struct
     let wrk_metrics, val_metrics = wrk_and_val_metrics t.splitter
         fold_set in
 
-    let first_val_loss = L.loss val_metrics in
+    let first_val_loss, _ = L.loss val_metrics in
 
     pr "fold % 3d          %s %s\n%!"
       fold

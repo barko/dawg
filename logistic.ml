@@ -57,8 +57,10 @@ type metrics = {
   loss : float;
 }
 
-let loss { loss } =
-  loss
+let loss { loss; tf; ft } =
+  let frac_misclassified = tf +. ft in
+  let has_converged = frac_misclassified = 0.0 in
+  loss, has_converged
 
 type model = Model_t.l_logistic_model
 

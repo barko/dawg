@@ -1,6 +1,10 @@
 module type LOSS = sig
   type metrics
-  val loss : metrics -> float
+
+  val loss : metrics -> float * bool
+  (* average loss, and an indication that convergence has taken place
+     (or rather, that continuing is pointless) *)
+
   val string_of_metrics : metrics -> string
   type model
 

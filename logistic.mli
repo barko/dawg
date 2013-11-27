@@ -1,6 +1,6 @@
 type metrics
 val string_of_metrics : metrics -> string
-val loss : metrics -> float
+val loss : metrics -> float * bool
 val probability : float -> float
 
 type model
