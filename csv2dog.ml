@@ -559,7 +559,6 @@ let float_feature j kc hist n i_values =
 exception MixedTypeFeature of int (* feature id *)
 
 let write_feature j i_values n dog feature_id_to_name config =
-  printf "feature id = %d\n%!" j;
   let hist = Hashtbl.create (n / 100) in
   let kc = List.fold_left (
       fun kc (i, value) ->
@@ -575,35 +574,38 @@ let write_feature j i_values n dog feature_id_to_name config =
       let cf = categorical_feature j kc hist n i_values
           feature_id_to_name config in
       match cf with
-        | `Uniform -> Printf.printf "cat feature %d uniform\n%!" j
+        | `Uniform ->
+          Printf.printf "%d: cat uniform\n%!" j
+
         | `NonUniform cat ->
+          Printf.printf "%d: cat\n%!" j;
           Dog_io.add_feature dog cat
     else
       raise (MixedTypeFeature j)
   else if kc.n_float > 0 then
-    let () = Printf.printf "float feature %d\n%!" j in
     let float_feat = float_feature j kc hist n i_values
         feature_id_to_name config in
     match float_feat with
       | `Uniform ->
-        Printf.printf "float feature %d uniform\n%!" j
+        Printf.printf "%d: float uniform\n%!" j
 
       | `NonUniform ord ->
+        Printf.printf "%d: float\n%!" j;
         Dog_io.add_feature dog ord
 
   else if kc.n_int > 0 then
-    let () = Printf.printf "int feature %d\n%!" j in
     let int_feat = int_feature j kc hist n i_values
         feature_id_to_name config in
     match int_feat with
       | `Uniform ->
-        Printf.printf "int feature %d uniform\n%!" j
+        Printf.printf "%d: int uniform\n%!" j
 
       | `NonUniform ord ->
+        Printf.printf "%d: int\n%!" j;
         Dog_io.add_feature dog ord
 
   else (
-    Printf.printf "feature %d uniform implicit\n%!" j
+    Printf.printf "%d: implicit uniform\n%!" j
   )
 
 
