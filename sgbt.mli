@@ -3,13 +3,13 @@ type conf = {
   num_folds : int;
   min_convergence_rate : float;
   initial_learning_rate : float;
-  y_name : string;
+  y : Feat_map.feature_descr;
   max_depth : int;
   convergence_rate_smoother_forgetful_factor : float;
   deadline : float option;
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
-  fold_feature_name_opt : string option;
+  fold_feature_opt : Feat_map.feature_descr option;
   max_trees_opt : int option;
   map_target_opt : Calc.map option;
 }

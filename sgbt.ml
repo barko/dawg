@@ -4,18 +4,20 @@ let pr = Printf.printf
 
 let random_seed = [| 9271 ; 12074; 3; 12921; 92; 763 |]
 
+type feature_descr = [`Name of string | `Id of int ]
+
 type conf = {
   dog_file_path : string;
   num_folds : int;
   min_convergence_rate : float;
   initial_learning_rate : float;
-  y_name : string;
+  y : feature_descr;
   max_depth : int;
   convergence_rate_smoother_forgetful_factor : float;
   deadline : float option;
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
-  fold_feature_name_opt : string option;
+  fold_feature_opt : feature_descr option;
   max_trees_opt : int option;
   map_target_opt : Calc.map option;
 }
@@ -242,8 +244,8 @@ module Make ( L : Loss.LOSS ) = struct
 
     learn_with_fold_rate conf t iteration
 
-  let folds_of_feature_name conf sampler feature_map n =
-    match conf.fold_feature_name_opt with
+  let folds_of_feature_name conf sampler feature_map n y_feature_id =
+    match conf.fold_feature_opt with
       | None ->
         (* randomly choose fold assignments *)
         let folds = Sampler.array (
@@ -252,34 +254,36 @@ module Make ( L : Loss.LOSS ) = struct
           ) sampler in
         folds, feature_map
 
-      | Some fold_feature_name ->
-        if fold_feature_name = conf.y_name then (
-          pr "fold feature and target feature must be different; they are both %S\n%!"
-            fold_feature_name;
-          exit 1
-        );
+      | Some fold_feature ->
 
-        (* try to find the named feature *)
-        match Feat_map.find_by_name_opt feature_map fold_feature_name with
+        match Feat_map.find feature_map fold_feature with
           | None ->
             pr "feature %S to be used for fold assignment not found\n%!"
-              fold_feature_name;
+              (Feat_map.string_of_feature_descr fold_feature);
             exit 1
-
           | Some i_fold_feature ->
+
+            let fold_feature_id = Feat_utils.id_of_feature i_fold_feature in
+            if fold_feature_id = y_feature_id then (
+              pr "fold feature and target feature must be different\n%!";
+              exit 1
+            );
+
             (* fold feature found; use it to construct folds *)
             let a_fold_feature = Feat_map.i_to_a feature_map i_fold_feature in
             match Feat_utils.folds_of_feature ~n ~num_folds:conf.num_folds
                     a_fold_feature with
               | `TooManyOrdinalFolds cardinality ->
-                pr "the cardinality of ordinal feature %S is %d, which is \
+                pr "the cardinality of ordinal feature %s is %d, which is \
                     too large relative to the number of folds %d\n%!"
-                  fold_feature_name cardinality conf.num_folds;
+                  (Feat_map.string_of_feature_descr fold_feature)
+                  cardinality conf.num_folds;
                 exit 1
 
               | `CategoricalCardinalityMismatch cardinality ->
-                pr "the cardinality of the categorical feature %S (%d) must \
-                    equal the number of folds (%d)\n%!" fold_feature_name
+                pr "the cardinality of the categorical feature %s (%d) must \
+                    equal the number of folds (%d)\n%!"
+                  (Feat_map.string_of_feature_descr fold_feature)
                   cardinality conf.num_folds;
                 exit 1
 
@@ -310,10 +314,11 @@ module Make ( L : Loss.LOSS ) = struct
     );
 
     let y_feature =
-      let y_feature_opt = Feat_map.find_by_name_opt feature_map conf.y_name in
+      let y_feature_opt = Feat_map.find feature_map conf.y in
       match y_feature_opt with
         | None ->
-          pr "target %S not found\n%!" conf.y_name;
+          pr "target %s not found\n%!"
+            (Feat_map.string_of_feature_descr conf.y);
           exit 1
 
         | Some y_feature ->
@@ -351,7 +356,10 @@ module Make ( L : Loss.LOSS ) = struct
     let sampler = Sampler.create n in
     Sampler.shuffle sampler random_state;
 
-    let folds, feature_map = folds_of_feature_name conf sampler feature_map n in
+    let folds, feature_map =
+      let y_feature_id = Feat_utils.id_of_feature y_feature in
+      folds_of_feature_name conf sampler feature_map n y_feature_id
+    in
 
     pr "features: included=%d excluded=%d\n%!"
       (Feat_map.length feature_map) num_excluded_features;

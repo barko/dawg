@@ -29,13 +29,26 @@ let deadline_of_string str =
 module LogisticSGBT = Sgbt.Make(Logistic)
 module SquareSGBT   = Sgbt.Make(Square)
 
+let feature_descr_of_args name_opt id_opt =
+  match name_opt, id_opt with
+    | None, None -> None
+    | Some _, Some _ ->
+      pr "can only specify the a feature by its name or its id, not both";
+      exit 1
+
+    | Some name, None -> Some (`Name name)
+    | None, Some id -> Some (`Id id)
+
 let learn
     dog_file_path
-    y_name max_depth
+    y_name_opt
+    y_id_opt
+    max_depth
     initial_learning_rate
     min_convergence_rate
     num_folds
     fold_feature_name_opt
+    fold_feature_id_opt
     convergence_rate_smoother_forgetful_factor
     deadline
     output_file_path
@@ -154,12 +167,24 @@ let learn
         )
   in
 
+  let y =
+    match feature_descr_of_args y_name_opt y_id_opt with
+      | None ->
+        pr "no target feature specified";
+        exit 1
+      | Some y -> y
+  in
+
+  let fold_feature_opt =
+    feature_descr_of_args fold_feature_name_opt fold_feature_id_opt
+  in
+
   let open Learner in
   let conf =
     let open Sgbt in
     {
       dog_file_path;
-      y_name;
+      y;
       num_folds;
       min_convergence_rate;
       convergence_rate_smoother_forgetful_factor;
@@ -168,7 +193,7 @@ let learn
       deadline;
       output_file_path;
       excluded_feature_name_regexp_opt = regexp_opt;
-      fold_feature_name_opt;
+      fold_feature_opt;
       max_trees_opt;
       map_target_opt;
     }
@@ -186,10 +211,12 @@ let learn
     Learner.learn conf
   with
     | LS.WrongTargetType ->
-      pr "target %S is not binary\n%!" y_name;
+      pr "target %s is not binary\n%!"
+        (Feat_map.string_of_feature_descr y);
       exit 1
     | LS.BadTargetDistribution ->
-      pr "target %S has a bad distribution\n%!" y_name;
+      pr "target %s has a bad distribution\n%!"
+        (Feat_map.string_of_feature_descr y);
 
 
 open Cmdliner
@@ -205,10 +232,15 @@ let commands =
            info ["i";"input"] ~docv:"PATH" ~doc)
     in
     let y_name =
-      let doc = "the name of the response feature.  It must have exactly \
-                 two distinct values" in
-      Arg.(required & opt (some string) None &
-           info ["y";"response"] ~docv:"NAME" ~doc)
+      let doc = "the name of the response feature" in
+      Arg.(value & opt (some string) None &
+           info ["y";"response-name"] ~docv:"NAME" ~doc)
+    in
+
+    let y_id =
+      let doc = "the id of the response feature" in
+      Arg.(value & opt (some int) None &
+           info ["y-id";"response-id"] ~docv:"INT" ~doc)
     in
 
     let max_depth =
@@ -237,10 +269,20 @@ let commands =
 
     let fold_feature_name =
       let doc = "rather than assigning observations to folds randomly, \
-                 use the values of this feature to infer the assignment. \
-                 The feature will be excluded from learning." in
+                 use the values of the feature with this name to infer \
+                 the assignment. The feature will be excluded from \
+                 learning." in
       Arg.(value & opt (some string) None &
-           info ["f";"fold-feature"] ~docv:"STRING" ~doc )
+           info ["f";"fold-feature-name"] ~docv:"STRING" ~doc )
+    in
+
+    let fold_feature_id =
+      let doc = "rather than assigning observations to folds randomly, \
+                 use the values of the feature with this id to infer \
+                 the assignment. The feature will be excluded from \
+                 learning." in
+      Arg.(value & opt (some int) None &
+           info ["f-id";"fold-feature-id"] ~docv:"INT" ~doc )
     in
 
     let convergence_rate_smoother_forgetful_factor =
@@ -302,11 +344,13 @@ let commands =
     Term.(pure learn $
             input_file_path $
             y_name $
+            y_id $
             max_depth $
             learning_rate $
             min_convergence_rate $
             num_folds $
             fold_feature_name $
+            fold_feature_id $
             convergence_rate_smoother_forgetful_factor $
             deadline $
             output_file_path $
