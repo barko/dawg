@@ -644,8 +644,7 @@ let read_cells_write_features work_dir ~num_cell_files ~num_rows header config =
   | [< >] ->
     write_feature prev_j i_values num_rows dog feature_id_to_name
       config;
-    Dog_io.close_writer dog;
-    Printf.printf "\nmap phase done\n%!"
+    Dog_io.close_writer dog
   in
 
   let dog = Dog_io.create_writer config.output_path num_rows in

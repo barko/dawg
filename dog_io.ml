@@ -98,7 +98,6 @@ let close_writer t =
   if t.is_open then
     (* note the position where we will serialize [Dog.t] *)
     let pos = t.num_bytes in
-    Printf.printf "close pos = %d\n%!" pos;
 
     (* serialize [Dog.t] *)
     let dog_s = Dog_b.string_of_t t.dog in
