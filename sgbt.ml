@@ -148,7 +148,7 @@ module Make ( L : Loss.LOSS ) = struct
               convergence_rate_hat;
 
             if has_converged then (
-              pr " converged: metrics inidicate continuing is pointless";
+              pr "converged: metrics inidicate continuing is pointless\n";
               `Converged (iteration.learning_rate, iteration.trees)
             )
             else if val_loss >= 2.0 *. iteration.prev_loss then (
