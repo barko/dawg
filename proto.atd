@@ -1,0 +1,30 @@
+(** types for the protocol between the master and worker.  There is at
+    most one worker per host, serving on a pre-determined port (as a
+    means of achieving uniqueness) *)
+
+type task_id = string
+type host = string
+type feature_id = int
+
+type client_to_worker = [
+  | Heel of task_id
+  (* client tries to assert his ownership of worker *)
+
+  | InformPeerHost of host
+  (* tell the worker of one its peers; it may or may not collaborate
+     on the worker's task *)
+
+  | GetFeatureFromHost of (host * feature_id list)
+  (* instruct the worker to get these features from a specific host;
+     there no need to [InformPeerHost] of that host in advance *)
+
+  | SetLocalDogFile string
+  (* tell the worker to initialize itself using the dog file at the
+     specified path on its host; the worker will have access to the
+     dog file's features *)
+
+]
+
+type worker_to_client = [
+  | Ack_Heel of [ Ok | Busy of task_id ]
+]
