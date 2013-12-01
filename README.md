@@ -4,7 +4,7 @@ documentation on usage, see the
 
 `dawg` is written in [OCaml](http://ocaml.org).  To build it, you will
 need the following OCaml packages, each of which is available through
-(opam)[http://opam.ocaml.org/]:
+[opam](http://opam.ocaml.org/):
 
 * omake
 * atdgen
