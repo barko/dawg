@@ -71,6 +71,11 @@ let _ =
       Printf.printf "unterminated quote on line %d\n%!" line;
       exit 1
 
+    | `IntOverflow (line, offending_string) ->
+      Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+        offending_string line;
+      exit 1
+
     | `Ok (header, next_row) ->
       let rec loop () =
         match next_row () with
@@ -80,6 +85,11 @@ let _ =
 
           | `UnterminatedString line ->
             Printf.printf "unterminated quote on line %d\n%!" line;
+            exit 1
+
+          | `IntOverflow (line, offending_string) ->
+            Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+              offending_string line;
             exit 1
 
           | `Ok `EOF -> ()

@@ -20,7 +20,13 @@ let min10 = min_int / 10 - (if min_int mod 10 = 0 then 0 else 1)
 let max10 = max_int / 10 + (if max_int mod 10 = 0 then 0 else 1)
 
 (* from Yojson's read.mll.  Merci Martin. *)
-exception Int_overflow
+
+exception IntOverflow of (int * string)
+(* line number * unparseable string *)
+
+let raise_int_overflow lexbuf ~start ~stop =
+  let huge_int = String.sub lexbuf.lex_buffer start (stop-start) in
+  raise (IntOverflow (lexbuf.lex_start_p.pos_lnum, huge_int))
 
 let dec c =
   Char.code c - 48
@@ -32,12 +38,12 @@ let extract_positive_int lexbuf =
   let n = ref 0 in
   for i = start to stop - 1 do
     if !n >= max10 then
-      raise Int_overflow
+      raise_int_overflow lexbuf ~start ~stop
     else
       n := 10 * !n + dec s.[i]
   done;
   if !n < 0 then
-    raise Int_overflow
+    raise_int_overflow lexbuf ~start ~stop
   else
     !n
 
@@ -48,12 +54,12 @@ let extract_negative_int lexbuf =
   let n = ref 0 in
   for i = start to stop - 1 do
     if !n <= min10 then
-      raise Int_overflow
+      raise_int_overflow lexbuf ~start ~stop
     else
       n := 10 * !n - dec s.[i]
   done;
   if !n > 0 then
-    raise Int_overflow
+    raise_int_overflow lexbuf ~start ~stop
   else
     !n
 

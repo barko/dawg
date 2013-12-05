@@ -20,9 +20,13 @@ let string_of_error_location {e_line_number; e_start; e_end} =
   Printf.sprintf "error at line %d, characters %d-%d\n" e_line_number
     e_start e_end
 
-type next_row = unit -> [ `Ok of Csv_types.row
-                        | `SyntaxError of error_location
-                        | `UnterminatedString of int ]
+type error = [
+  | `SyntaxError of error_location
+  | `UnterminatedString of int (* line number *)
+  | `IntOverflow of (int * string) (* line number and offending string *)
+]
+
+type next_row = unit -> [ `Ok of Csv_types.row | error ]
 
 let of_channel ch =
   let lexbuf = Lexing.from_channel ch in
@@ -36,6 +40,8 @@ let of_channel ch =
           `SyntaxError (error_location lexbuf)
         | Csv_lexer.UnterminatedString line ->
           `UnterminatedString line
+        | Csv_lexer.IntOverflow line_and_offending_string ->
+          `IntOverflow line_and_offending_string
     in
     `Ok (h, row)
 
@@ -44,3 +50,5 @@ let of_channel ch =
       `SyntaxError (error_location lexbuf)
     | Csv_lexer.UnterminatedString line ->
       `UnterminatedString line
+    | Csv_lexer.IntOverflow line_and_offending_string ->
+      `IntOverflow line_and_offending_string

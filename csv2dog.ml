@@ -204,6 +204,12 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
       | `UnterminatedString line ->
         Printf.printf "unterminated string on line %d\n%!" line;
         exit 1
+
+      | `IntOverflow (line, offending_string) ->
+        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+          offending_string line;
+        exit 1
+
   in
   Printf.printf "num features: %d\n%!" num_features;
   loop ~i:0 ~f:0 ~c:0
