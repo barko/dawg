@@ -6,7 +6,8 @@ type metrics = {
 }
 
 let loss { loss } =
-  loss, true
+  loss, false (* unlike logistic, square objective
+                 has only one metric -- the loss itself *)
 
 type model = Model_t.l_regression_model
 
