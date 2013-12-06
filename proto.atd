@@ -6,7 +6,44 @@ type task_id = string
 type host = string
 type feature_id = int
 
-type client_to_worker = [
+type 'a task = (task_id * 'a)
+
+type setup = {
+  y_feature_id : feature_id;
+  fold_feature_id : feature_id option;
+}
+
+type get_features_from_host = {
+  host : host ;
+  features : feature_id list
+}
+
+type point = {
+  (* what is the value of the piecewise function at the split? *)
+  s_gamma : float ;
+
+  (* how many observations does the split cover? *)
+  s_n : int ;
+
+  (* what is the loss? *)
+  s_loss  : float ;
+}
+
+type ordinal_split = {
+  os_feature_id : feature_id ;
+  os_split : int ;
+  os_left : point ;
+  os_right : point ;
+}
+
+type categorical_split = (ordinal_split * int list <ocaml repr="array">)
+
+type split = [
+  | OrdinalSplit of ordinal_split
+  | CategoricalSplit of categorical_split
+]
+
+type master_to_worker = [
   | Heel of task_id
   (* client tries to assert his ownership of worker *)
 
@@ -14,17 +51,41 @@ type client_to_worker = [
   (* tell the worker of one its peers; it may or may not collaborate
      on the worker's task *)
 
-  | GetFeatureFromHost of (host * feature_id list)
+  | GetFeaturesFromHost of get_features_from_host task
   (* instruct the worker to get these features from a specific host;
      there no need to [InformPeerHost] of that host in advance *)
 
-  | SetLocalDogFile of string
+  | SetLocalDogFile of string task
   (* tell the worker to initialize itself using the dog file at the
      specified path on its host; the worker will have access to the
      dog file's features *)
 
+  | Setup of setup task
+  (* set up a task by specifying the target and fold features *)
+
+  | SetRandomSeed of int list task
+
+  | AddFeatures of (feature_id list * [ Best | Partitioning ] task)
+  (* add a feature to the set used for finding a best split, or used
+     for partitioning of the observations; a feature may
+     simultaneously serve as both *)
+
+  | BestSplit of task_id
+
 ]
 
-type worker_to_client = [
-  | Ack_Heel of [ Ok | Busy of task_id ]
+type ok_busy = [
+  | Ok
+  | Busy of task_id (* worker is busy working on another task *)
+]
+
+type dont_have_features = [ inherit ok_busy | DontHaveFeatures of feature_id list ]
+
+type worker_to_master = [
+  | AckHeel of ok_busy
+  | AckSetupLocalDogFile of ok_busy
+  | AckSetup of dont_have_features
+  | AckSetRandomSeed of ok_busy
+  | AckAddFeatures of dont_have_features
+  | AckBestSplit of [ Ok of split | None | Busy of task_id ]
 ]
