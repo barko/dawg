@@ -106,7 +106,7 @@ let updated_loss ~gamma  ~sum_l ~sum_z ~sum_n =
   sum_l +. (float sum_n) *. gamma *. gamma -. 2.0 *. gamma *. sum_z
 
 
-class splitter y_feature n calc_opt =
+class splitter y_feature n =
   let y = get_y_as_array y_feature n in
 
   let z = Array.create n 0.0 in

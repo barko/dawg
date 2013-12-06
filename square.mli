@@ -7,7 +7,7 @@ type model
 exception WrongTargetType
 exception BadTargetDistribution
 
-class splitter : Feat.afeature -> int -> Calc.map option ->
+class splitter : Feat.afeature -> int ->
   object
     method clear : unit
     method best_split : Feat.afeature -> (float * Split.t) option

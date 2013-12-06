@@ -61,7 +61,6 @@ FILES[] =
   roc
   square
   gen_code
-  calc
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \

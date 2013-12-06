@@ -153,7 +153,7 @@ let y_array_of_cat n cat =
 
         | _ -> assert false
 
-let y_array_of_ord n ord map_target_opt =
+let y_array_of_ord n ord =
   let open Dog_t in
   let { o_vector; o_breakpoints; o_cardinality } = ord in
   let y = Array.create n nan in
@@ -178,39 +178,7 @@ let y_array_of_ord n ord map_target_opt =
               | _ -> assert false
           )
     else
-      match map_target_opt with
-        | None ->
-          (* no mapper to transform a real target into a
-             binary one; complain *)
-          raise WrongTargetType
-
-        | Some map_target ->
-          (* cardinality of y feature is not binary, but we
-             have a function to binarize its values *)
-          match o_breakpoints with
-            | `Float breakpoints ->
-              let breakpoints = Array.of_list breakpoints in
-              let map value =
-                let f_value = breakpoints.( value ) in
-                match map_target (`Float f_value) with
-                  | `Bool false -> -1.0
-                  | `Bool true  ->  1.0
-                  | `Float _ | `String _ | `Int _ ->
-                    raise WrongTargetType (* TODO: new exception type *)
-              in
-              map, "y", Some "n"
-
-            | `Int breakpoints ->
-              let breakpoints = Array.of_list breakpoints in
-              let map value =
-                let i_value = breakpoints.( value ) in
-                match map_target (`Int i_value) with
-                  | `Bool false -> -1.0
-                  | `Bool true  ->  1.0
-                  | `Float _ | `String _ | `Int _ ->
-                    raise WrongTargetType (* TODO: new exception type *)
-              in
-              map, "y", Some "n"
+      raise WrongTargetType
   in
 
   (match o_vector with
@@ -255,13 +223,12 @@ let y_array_of_ord n ord map_target_opt =
   );
   y, positive_category, negative_category_opt
 
-let y_array_of_feature y_feature n map_target_opt =
+let y_array_of_feature y_feature n =
   (* convert bools to {-1,+1} *)
   let y, p, n_opt =
     match y_feature with
       | `Cat cat -> y_array_of_cat n cat
-      | `Ord ord ->
-        y_array_of_ord n ord map_target_opt
+      | `Ord ord -> y_array_of_ord n ord
   in
   assert (
     try
@@ -303,9 +270,9 @@ end
 let updated_loss ~gamma  ~sum_l ~sum_z ~sum_w =
   sum_l -. gamma *. sum_z +. 0.5 *. gamma *. gamma *. sum_w
 
-class splitter y_feature n calc_opt =
+class splitter y_feature n =
   let y, positive_category, negative_category_opt =
-    y_array_of_feature y_feature n calc_opt in
+    y_array_of_feature y_feature n in
 
   let z = Array.create n 0.0 in
   let w = Array.create n 0.0 in

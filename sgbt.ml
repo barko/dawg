@@ -17,7 +17,6 @@ type conf = {
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_map.feature_descr option;
   max_trees_opt : int option;
-  map_target_opt : Calc.map option;
 }
 
 module type SGBT = sig
@@ -366,8 +365,7 @@ module Make ( L : Loss.LOSS ) = struct
     pr "features: included=%d excluded=%d\n%!"
       (Feat_map.length feature_map) num_excluded_features;
 
-    let splitter = new L.splitter y_feature num_observations
-      conf.map_target_opt in
+    let splitter = new L.splitter y_feature num_observations in
     let eval = Tree.mk_eval num_observations feature_map in
 
     let t = {
