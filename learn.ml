@@ -138,35 +138,6 @@ let learn
         | `Square -> (module SquareSGBT)
   ) in
 
-  let map_target_opt =
-    match loss_type, binarization_threshold_opt with
-      | `Square, None -> None
-      | `Logistic, None -> None
-
-      | `Square, Some _ ->
-        pr "binarization thresholds only apply to logistic models";
-        exit 1
-
-      | `Logistic, Some binarization_threshold ->
-        Some (
-          function
-            | `Float v ->
-              if v >= binarization_threshold (* ||
-                 v <= -.binarization_threshold *) then (* TODO *)
-
-                `Bool true
-              else
-                `Bool false
-            | `Int v ->
-              if float v >= binarization_threshold then
-                `Bool true
-              else
-                `Bool false
-            | `String _ | `Bool _ ->
-              raise Calc.TypeMismatch
-        )
-  in
-
   let y =
     match feature_descr_of_args y_name_opt y_id_opt with
       | None ->
@@ -195,7 +166,6 @@ let learn
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
       max_trees_opt;
-      map_target_opt;
     }
   in
 

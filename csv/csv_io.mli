@@ -7,13 +7,11 @@ type error_location = {
 open Csv_types
 val string_of_error_location : error_location -> string
 
-type next_row = unit ->
-  [ `Ok of Csv_types.row
+type error = [
   | `SyntaxError of error_location
-  | `UnterminatedString of int (* line number *) ]
+  | `UnterminatedString of int (* line number *)
+  | `IntOverflow of (int * string) (* line number and offending string *)
+]
 
-val of_channel :
-  in_channel ->
-  [> `Ok of string list * next_row
-  | `SyntaxError of error_location
-  | `UnterminatedString of int (* line number *) ]
+type next_row = unit -> [ `Ok of Csv_types.row | error ]
+val of_channel : in_channel ->  [ `Ok of string list * next_row | error ]

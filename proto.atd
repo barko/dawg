@@ -18,7 +18,7 @@ type client_to_worker = [
   (* instruct the worker to get these features from a specific host;
      there no need to [InformPeerHost] of that host in advance *)
 
-  | SetLocalDogFile string
+  | SetLocalDogFile of string
   (* tell the worker to initialize itself using the dog file at the
      specified path on its host; the worker will have access to the
      dog file's features *)

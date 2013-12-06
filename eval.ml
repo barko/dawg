@@ -516,6 +516,11 @@ let model_eval
       | `UnterminatedString line_num ->
         printf "unterminated string on line %d\n%!" line_num;
         exit 1
+
+      | `IntOverflow (line, offending_string) ->
+        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+          offending_string line;
+        exit 1
   in
 
   let get = mk_get features in
@@ -554,6 +559,7 @@ let model_eval
                       is not recognized\n%!"
                 row_num cat feature_id;
               false, IntMap.empty
+
         in
         if is_ok then
           loop (row_num + 1) feature_id_to_importance pch
@@ -567,6 +573,12 @@ let model_eval
       | `UnterminatedString line_num ->
         printf "unterminated string on line %d\n%!" line_num;
         exit 1
+
+      | `IntOverflow (line, offending_string) ->
+        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+          offending_string line;
+        exit 1
+
   in
   (* report row number with 1-index *)
   let feature_id_to_importance = loop 1 IntMap.empty pch in

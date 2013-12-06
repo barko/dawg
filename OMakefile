@@ -65,10 +65,7 @@ FILES[] =
   roc
   square
   gen_code
-  calc
   proto_t
-  model_b
-
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \
