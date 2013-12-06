@@ -692,14 +692,30 @@ let create_work_dir () =
   mkdir_else_exit work_dir;
   work_dir
 
+let pr = Printf.printf
+let sp = Printf.sprintf
+
 let create config =
   let work_dir = create_work_dir () in
   let header, num_rows, num_cell_files = csv_to_cells work_dir config in
-  Printf.printf "num rows: %d, num_cell_files: %d\n%!" num_rows num_cell_files;
-  read_cells_write_features work_dir ~num_rows ~num_cell_files header
-    config;
+  pr "num rows: %d, num_cell_files: %d\n%!" num_rows num_cell_files;
+  let exit_status =
+    if num_rows > 0 then (
+      read_cells_write_features work_dir ~num_rows ~num_cell_files header config;
+      0
+    )
+    else (
+      pr "input %scontains now data\n%!" (
+        match config.input_path_opt with
+          | Some path -> sp "%S " path
+          | None -> ""
+      );
+      1
+    )
+  in
   (* remove the working directory *)
-  Unix.rmdir work_dir
+  Unix.rmdir work_dir;
+  exit_status
 
 
 module Defaults = struct
@@ -738,7 +754,11 @@ let create output_path input_path_opt max_density no_header max_cells_in_mem
     work_dir = Defaults.work_dir;
     max_width;
   } in
-  create config
+  let exit_status = create config in
+
+  (* hmm unnecessary verbage to make compiler happy *)
+  let () = exit exit_status in
+  ()
 
 open Cmdliner
 
