@@ -1,7 +1,8 @@
-(** types for the protocol between the master and worker.  There is at
-    most one worker per host, serving on a pre-determined port (as a
-    means of achieving uniqueness) *)
+(** types for the protocol between the master and worker, and among
+    workers.  There is at most one worker per host, serving on a
+    pre-determined port (as a means of achieving uniqueness) *)
 
+type worker_id = string
 type task_id = string
 type host = string
 type feature_id = int
@@ -47,6 +48,9 @@ type master_to_worker = [
   | Heel of task_id
   (* client tries to assert his ownership of worker *)
 
+  | Id
+  (* what is the worker id? *)
+
   | InformPeerHost of host
   (* tell the worker of one its peers; it may or may not collaborate
      on the worker's task *)
@@ -88,4 +92,5 @@ type worker_to_master = [
   | AckSetRandomSeed of ok_busy
   | AckAddFeatures of dont_have_features
   | AckBestSplit of [ Ok of split | None | Busy of task_id ]
+  | AckId of worker_id
 ]
