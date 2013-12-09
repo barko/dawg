@@ -44,6 +44,12 @@ type split = [
   | CategoricalSplit of categorical_split
 ]
 
+type push = {
+  feature_id : feature_id ;
+  direction : [ Right | Left ];
+  split : split
+}
+
 type master_to_worker = [
   | Heel of task_id
   (* client tries to assert his ownership of worker *)
@@ -69,18 +75,24 @@ type master_to_worker = [
 
   | SetRandomSeed of int list task
 
-  | AddFeatures of (feature_id list * [ Best | Partitioning ] task)
+  | AddFeatures of (feature_id list * [BestAndPartition | PartitionOnly]) task
   (* add a feature to the set used for finding a best split, or used
      for partitioning of the observations; a feature may
      simultaneously serve as both *)
 
   | BestSplit of task_id
+  (* get the best split among all the features which are elements of
+     the [Best] set *)
+
+  | Push of push
+  | Pop
 
 ]
 
 type ok_busy = [
   | Ok
   | Busy of task_id (* worker is busy working on another task *)
+  | Idle (* worker is unemployed, that is not working for any master *)
 ]
 
 type dont_have_features = [ inherit ok_busy | DontHaveFeatures of feature_id list ]
