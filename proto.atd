@@ -85,24 +85,27 @@ type master_to_worker = [
      the [Best] set *)
 
   | Push of push
-  | Pop
+  (* 'descend' to a subpopulation of the observations indicated by [push.split] *)
+
+  | Pop (* ascend *)
 
 ]
 
-type ok_busy = [
-  | Ok
+type bad_state = [
   | Busy of task_id (* worker is busy working on another task *)
-  | Idle (* worker is unemployed, that is not working for any master *)
+  | Idle (* worker is unemployed, that is, not working for any master *)
 ]
-
-type dont_have_features = [ inherit ok_busy | DontHaveFeatures of feature_id list ]
+type common_ack = [ inherit bad_state | Ok ]
+type dont_have_features = [ inherit common_ack | DontHaveFeatures of feature_id list ]
 
 type worker_to_master = [
-  | AckHeel of ok_busy
-  | AckSetupLocalDogFile of ok_busy
+  | AckHeel of common_ack
+  | AckSetupLocalDogFile of common_ack
   | AckSetup of dont_have_features
-  | AckSetRandomSeed of ok_busy
+  | AckSetRandomSeed of common_ack
   | AckAddFeatures of dont_have_features
   | AckBestSplit of [ Ok of split | None | Busy of task_id ]
   | AckId of worker_id
+  | AckPush of dont_have_features
+  | AckPop of [ inherit common_ack | Empty (* nothing to pop! *) ]
 ]
