@@ -701,11 +701,17 @@ let create config =
   pr "num rows: %d, num_cell_files: %d\n%!" num_rows num_cell_files;
   let exit_status =
     if num_rows > 0 then (
-      read_cells_write_features work_dir ~num_rows ~num_cell_files header config;
-      0
+      try
+        read_cells_write_features work_dir ~num_rows ~num_cell_files header
+          config;
+        0
+      with (MixedTypeFeature feature_id) ->
+        pr "feature %d (column %d) has feature values that are both numeric \
+          and categorical\n%!" feature_id (feature_id + 1);
+        1
     )
     else (
-      pr "input %scontains now data\n%!" (
+      pr "input %scontains no data\n%!" (
         match config.input_path_opt with
           | Some path -> sp "%S " path
           | None -> ""
