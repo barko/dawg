@@ -5,9 +5,19 @@ NATIVE_ENABLED = true
 BYTE_ENABLED = true
 
 OCAMLFLAGS  += -dtypes
-OCAMLPACKS[] += unix bigarray atdgen lwt.syntax csv pcre cmdliner mikmatch_pcre
 OCAMLOPTFLAGS += -inline 100
 OCAMLFINDFLAGS += -syntax camlp4o
+
+OCAMLPACKS[] +=
+  unix
+  lwt.syntax
+  lwt.unix
+  bigarray
+  atdgen
+  cmdliner
+  pcre
+  mikmatch_pcre
+  csv
 
 tS_t.mli tS_b.mli tS_t.ml tS_b.ml: tS.atd
         atdgen -t $<
@@ -66,6 +76,8 @@ FILES[] =
   square
   gen_code
   proto_t
+  lP_tcp
+  lwt_queue
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \
