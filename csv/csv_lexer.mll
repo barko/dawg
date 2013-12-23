@@ -85,7 +85,7 @@ let e = ['e' 'E']['+' '-']?
 let exp = e digits
 
 let positive_int = digits (* (digit | nonzero digits) *)
-let float = '-'? (
+let float = ('-'|'+')? (
     positive_int  '.' digits?
   | positive_int? '.' digits+
   | positive_int exp
