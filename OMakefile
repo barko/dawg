@@ -12,6 +12,7 @@ OCAMLPACKS[] +=
   unix
   lwt.syntax
   lwt.unix
+  lwt.react
   bigarray
   atdgen
   cmdliner
@@ -76,8 +77,10 @@ FILES[] =
   square
   gen_code
   proto_t
+  proto_b
   lP_tcp
   lwt_queue
+  worker
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \
@@ -85,6 +88,8 @@ FILES[] =
    $(OCamlProgram t_sm , test_stream_merge stream_merge heap ) \
    $(OCamlProgram t_rle, test_rle rle utils ) \
    $(OCamlProgram t_xyz, test_xyz )
+
+#   $(OCamlProgram t_react, test_react )
 
 .PHONY: clean
 
