@@ -12,6 +12,12 @@ type id = {
   user : string ; (* name of user owning the worker process *)
 }
 
+type known_worker = (worker_id * host list)
+(* a worker peer may be accessible via multiple ip addresses (eg
+   when a host has more than one network interface) *)
+
+type known_workers = known_worker list
+
 type 'a task = (task_id * 'a)
 
 type setup = {
@@ -68,7 +74,7 @@ type to_worker = [
 
   | GetFeaturesFromHost of get_features_from_host task
   (* instruct the worker to get these features from a specific host;
-     there no need to [InformPeerHost] of that host in advance *)
+     there's no need to [InformPeerHost] of that host in advance *)
 
   | SetLocalDogFile of string task
   (* tell the worker to initialize itself using the dog file at the

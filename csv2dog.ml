@@ -674,22 +674,13 @@ let read_cells_write_features work_dir ~num_cell_files ~num_rows header config =
       Unix.unlink cell_path
   ) 0 num_cell_files
 
-let mkdir_else_exit path =
-  try
-    Unix.mkdir path 0o750;
-  with
-    | Unix.Unix_error (Unix.EEXIST, _, _) -> ()
-    | exn ->
-      print_endline (Printexc.to_string exn);
-      exit 1
-
 let create_work_dir () =
   let home = Unix.getenv "HOME" in
   let dot_dawg = Filename.concat home ".dawg" in
-  mkdir_else_exit dot_dawg;
+  Utils.mkdir_else_exit dot_dawg;
   let pid_s = string_of_int (Unix.getpid ()) in
   let work_dir = Filename.concat dot_dawg pid_s in
-  mkdir_else_exit work_dir;
+  Utils.mkdir_else_exit work_dir;
   work_dir
 
 let pr = Printf.printf

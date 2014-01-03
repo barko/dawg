@@ -133,3 +133,30 @@ let rec iter_range f ~start ~finix =
     f start;
     iter_range f ~start:(start+1) ~finix
   )
+
+let mkdir_else_exit path =
+  try
+    Unix.mkdir path 0o750;
+  with
+    | Unix.Unix_error (Unix.EEXIST, _, _) -> ()
+    | exn ->
+      print_endline (Printexc.to_string exn);
+      exit 1
+
+
+(* read a biniou value from a file *)
+let bi_read_from_file read path =
+  let inch = open_in path in
+  let binch = Bi_inbuf.from_channel inch in
+  let v = read binch in
+  close_in inch;
+  v
+
+(* (over)write  a biniou value from a file *)
+let bi_write_to_file write path v =
+  let ouch = open_out path in
+  let bouch = Bi_outbuf.create_channel_writer ouch in
+  write bouch v;
+  Bi_outbuf.flush_output_writer bouch;
+  close_out ouch
+

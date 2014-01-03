@@ -64,12 +64,43 @@ and react_msg t peer = function
     Lwt.return (t, [recv t.srv])
   | _ -> assert false
 
+
 let worker detach : unit =
-  let srv = create () in
+  (* igore SIGPIPE's *)
+  Sys.set_signal Sys.sigpipe Sys.Signal_ignore;
+
+  (* create the working directory [$HOME/.dawg] if one does not
+     already exist *)
+  let home = Unix.getenv "HOME" in
+  let dot_dawg = Filename.concat home ".dawg" in
+  Utils.mkdir_else_exit dot_dawg;
+
+  (* read the existing worker id (stored in [$HOME/.dawg/worker-id])
+     or create a random worker id, and write it to that path *)
+  let worker_id =
+    let worker_id_path = Filename.concat dot_dawg "worker-id" in
+    if Sys.file_exists worker_id_path then
+      Utils.bi_read_from_file Proto_b.read_worker_id worker_id_path
+    else
+      (* create the worker id *)
+      let worker_id = "asdfasdfasdf" in
+      Utils.bi_write_to_file Proto_b.write_worker_id worker_id_path worker_id;
+      worker_id
+  in
+
+  let srv =
+    try
+      create ()
+    with Unix.Unix_error( _, "bind", _) ->
+      (* TODO: connect to the process, to get its id and user *)
+      Printf.printf "another process already has port %d bound\n%!" port;
+      exit 1
+  in
+
   let threads = [recv srv]  in
   let t = {
     srv;
-    worker_id = "myid" ;
+    worker_id;
     user = Unix.getlogin ()
   } in
   Lwt_main.run (service t threads)

@@ -32,3 +32,11 @@ val num_bytes : int -> int
 
 val fold_range : (int -> 'a -> 'a) -> start:int -> finix:int -> 'a -> 'a
 val iter_range : (int -> unit) -> start:int -> finix:int -> unit
+
+val mkdir_else_exit : string -> unit
+
+val bi_read_from_file : (Bi_inbuf.t -> 'a) -> string -> 'a
+(* read a biniou-serialized value from a file *)
+
+val bi_write_to_file : (Bi_outbuf.t -> 'a -> unit) -> string -> 'a -> unit
+(* write a biniou-serialized value to a file *)

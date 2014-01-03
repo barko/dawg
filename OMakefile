@@ -90,9 +90,7 @@ FILES[] =
    $(OCamlProgram t_sm , test_stream_merge stream_merge heap ) \
    $(OCamlProgram t_rle, test_rle rle utils ) \
    $(OCamlProgram t_xyz, test_xyz ) \
-   $(OCamlProgram wcli, wcli worker lwt_queue lP_tcp proto_b proto_t proto_j )
-
-#   $(OCamlProgram t_react, test_react )
+   $(OCamlProgram wcli, wcli lwt_queue lP_tcp proto_b proto_t proto_j )
 
 .PHONY: clean
 
