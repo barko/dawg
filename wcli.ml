@@ -1,10 +1,9 @@
-open Printf
 open LP_tcp
 
 (* the client connects to the server, reads text from stdin, and sends
    it to the server; it also writes to stdout any messages received
-   from the server; it quites when the server disconnects, or when
-   it reads end-of-file from stdin. *)
+   from the server; it quits when the server disconnects, or when it
+   reads end-of-file from stdin. *)
 let client host port =
   let open Lwt in
   lwt client = Client.create host port in
