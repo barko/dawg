@@ -7,6 +7,11 @@ type task_id = string
 type host = string
 type feature_id = int
 
+type id = {
+  worker_id : worker_id ;
+  user : string ; (* name of user owning the worker process *)
+}
+
 type 'a task = (task_id * 'a)
 
 type setup = {
@@ -50,7 +55,7 @@ type push = {
   split : split
 }
 
-type master_to_worker = [
+type to_worker = [
   | Heel of task_id
   (* client tries to assert his ownership of worker *)
 
@@ -98,14 +103,14 @@ type bad_state = [
 type common_ack = [ inherit bad_state | Ok ]
 type dont_have_features = [ inherit common_ack | DontHaveFeatures of feature_id list ]
 
-type worker_to_master = [
+type from_worker = [
   | AckHeel of common_ack
   | AckSetupLocalDogFile of common_ack
   | AckSetup of dont_have_features
   | AckSetRandomSeed of common_ack
   | AckAddFeatures of dont_have_features
   | AckBestSplit of [ Ok of split | None | Busy of task_id ]
-  | AckId of worker_id
+  | AckId of id
   | AckPush of dont_have_features
   | AckPop of [ inherit common_ack | Empty (* nothing to pop! *) ]
 ]

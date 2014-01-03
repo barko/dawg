@@ -2,31 +2,34 @@
 
 let port = 60_287
 (* if we can't bind to this port, we concluded that another instance
-   of this server is running on the same host; only one such instance may
-   run on each host, so we refuse to start another on another port *)
+   of this server is running on the same host; only one such instance
+   may run on each host, so we refuse to start another on another
+   port *)
 
 let create () =
   LP_tcp.Server.create port
 
+(* serialize and send outgoing message *)
 let send t peer m =
-  let s = Proto_b.string_of_worker_to_master m in
+  let s = Proto_b.string_of_from_worker m in
   LP_tcp.Server.send t peer (Some s)
 
-let recv t peer =
-  lwt peer, event = LP_tcp.Server.recv t in
-  let r =
+(* deserialize (parse) incoming message *)
+let recv srv =
+  lwt peer, event = LP_tcp.Server.recv srv in
+  let event =
     match event with
       | `Connect -> `Connect
       | `Disconnect -> `Disconnect
-      | `Message s -> `Message (Proto_b.worker_to_master_of_string s)
+      | `Message s -> `Message (Proto_b.to_worker_of_string s)
   in
-  Lwt.return r
+  Lwt.return (peer, event)
 
 let is_sleeping thr =
   match Lwt.state thr with
-    | Lwt.Sleep -> true
-    | Lwt.Fail _ -> assert false
+    | Lwt.Sleep
     | Lwt.Return _ -> false
+    | Lwt.Fail _ -> assert false
 
 let nchoose_fold f threads x0 =
   lwt results = Lwt.nchoose threads in
@@ -39,17 +42,37 @@ let nchoose_fold f threads x0 =
   in
   loop x0 [sleeping_threads] results
 
-let rec run t threads =
+type t = {
+  srv : LP_tcp.Server.t;
+  worker_id : string;
+  user : string
+}
+
+let rec service t threads =
   lwt t, threads = nchoose_fold react threads t in
-  run t threads
+  service t threads
 
 and react t = function
-  | _ -> Lwt.return (t, [])
+  | peer, `Connect -> Lwt.return (t, [recv t.srv])
+  | peer, `Disconnect -> Lwt.return (t, [recv t.srv])
+  | peer, `Message msg -> react_msg t peer msg
 
-let worker detach =
-  let _srv = create () in
-  Lwt_main.run (Lwt.join [])
+and react_msg t peer = function
+  | `Id ->
+    let ack_id = `AckId { Proto_b.worker_id = t.worker_id; user = t.user } in
+    lwt () = send t.srv peer ack_id in
+    Lwt.return (t, [recv t.srv])
+  | _ -> assert false
 
+let worker detach : unit =
+  let srv = create () in
+  let threads = [recv srv]  in
+  let t = {
+    srv;
+    worker_id = "myid" ;
+    user = Unix.getlogin ()
+  } in
+  Lwt_main.run (service t threads)
 
 open Cmdliner
 
