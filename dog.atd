@@ -52,3 +52,4 @@ type ('rle, 'dense) feature = [
 ]
 
 type ifeature = (vector_id , vector_id) feature
+type ufeature = (unit, unit) feature

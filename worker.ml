@@ -42,10 +42,22 @@ let nchoose_fold f threads x0 =
   in
   loop x0 [sleeping_threads] results
 
+type state =
+  | Available
+  (* worker is free to do work for any master that cares for its services *)
+
+  | Owned of Proto_t.task_id
+  (* worker has been claimed by a master to work on a particular task *)
+
+  | Setup of Proto_t.setup
+  (* worker has successfully setup the task; that means
+     it has at least the target (y) feature, and the fold
+     feature (if one is required) *)
+
 type t = {
   srv : LP_tcp.Server.t;
   worker_id : string;
-  user : string
+  user : string;
 }
 
 let rec service t threads =

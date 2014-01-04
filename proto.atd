@@ -23,12 +23,15 @@ type 'a task = (task_id * 'a)
 type setup = {
   y_feature_id : feature_id;
   fold_feature_id : feature_id option;
+
+  local_dog_path : string option;
+  (* tell the worker to initialize itself using the dog file at the
+     specified path on its host; the worker will have access to the
+     dog file's features *)
+
 }
 
-type get_features_from_host = {
-  host : host ;
-  features : feature_id list
-}
+type ufeature <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
 
 type point = {
   (* what is the value of the piecewise function at the split? *)
@@ -65,24 +68,26 @@ type to_worker = [
   | Heel of task_id
   (* client tries to assert his ownership of worker *)
 
+  | Setup of setup task
+  (* tell the worker about the task; the worker will look for the
+     target and fold features, so, unless it is also given the complete
+     dog file path, it better have at least one collaborating peer to find them *)
+
   | Id
   (* what is the worker id? *)
 
-  | InformPeerHost of host
+  | InformPeerHosts of host list
   (* tell the worker of one its peers; it may or may not collaborate
      on the worker's task *)
 
-  | GetFeaturesFromHost of get_features_from_host task
-  (* instruct the worker to get these features from a specific host;
-     there's no need to [InformPeerHost] of that host in advance *)
+  | GetFeaturesFromPeers of ufeature list task
+  (* instruct the worker to acquire these features from any of its
+     collaborating peers, if it doesn't already have them; it is not
+     guaranteed that a collaborating peer has that feature. *)
 
-  | SetLocalDogFile of string task
-  (* tell the worker to initialize itself using the dog file at the
-     specified path on its host; the worker will have access to the
-     dog file's features *)
-
-  | Setup of setup task
-  (* set up a task by specifying the target and fold features *)
+  | GetFeatures of feature_id list
+  (* get feature _data_ (rather than metadata), from _this_ worker
+     (rather than its peers *)
 
   | SetRandomSeed of int list task
 

@@ -36,8 +36,8 @@ model_t.mli model_b.mli model_j.mli model_t.ml model_b.ml model_j.ml: model.atd
 
 proto_t.mli proto_b.mli proto_j.mli proto_t.ml proto_b.ml proto_j.ml: proto.atd
         atdgen -t $<
-        atdgen -b $<
-        atdgen -j -j-std $<
+        atdgen -b -open Dog_b $<
+        atdgen -j -open Dog_j -j-std $<
 
 FILES[] =
   utils
@@ -90,7 +90,9 @@ FILES[] =
    $(OCamlProgram t_sm , test_stream_merge stream_merge heap ) \
    $(OCamlProgram t_rle, test_rle rle utils ) \
    $(OCamlProgram t_xyz, test_xyz ) \
-   $(OCamlProgram wcli, wcli lwt_queue lP_tcp proto_b proto_t proto_j )
+   $(OCamlProgram wcli, wcli lwt_queue lP_tcp \
+                        proto_b proto_t proto_j \
+                        dog_b dog_t dog_j )
 
 .PHONY: clean
 
