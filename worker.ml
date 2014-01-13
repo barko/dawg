@@ -42,23 +42,31 @@ let nchoose_fold f threads x0 =
   in
   loop x0 [sleeping_threads] results
 
-type state =
-  | Available
+type working = {
+  y_feature_id : Proto_t.feature_id;
+  fold_feature_id : Proto_t.feature_id option;
+  local_dog_path : string option;
+  best_split : D_best_split.t;
+  feature_map : Feat_map.t;
+}
+
+type state = [
+  | `Available
   (* worker is free to do work for any master that cares for its services *)
 
-  | Owned of Proto_t.task_id
-  (* worker has been claimed by a master to work on a particular task *)
-
-  | Setup of Proto_t.setup
+  | `Working of working
   (* worker has successfully setup the task; that means
      it has at least the target (y) feature, and the fold
      feature (if one is required) *)
+]
 
 type t = {
   srv : LP_tcp.Server.t;
   worker_id : string;
   user : string;
+  state : state;
 }
+
 
 let rec service t threads =
   lwt t, threads = nchoose_fold react threads t in
@@ -74,7 +82,29 @@ and react_msg t peer = function
     let ack_id = `AckId { Proto_b.worker_id = t.worker_id; user = t.user } in
     lwt () = send t.srv peer ack_id in
     Lwt.return (t, [recv t.srv])
+  | `BestSplit task_id -> best_split t peer task_id
   | _ -> assert false
+
+and best_split t peer task_id =
+  match t.state with
+    | `Working working -> (
+        let result =
+          match working.best_split with
+            | `Logistic (splitter, best_split) ->
+              best_split working.feature_map splitter
+
+            | `Square (splitter, best_split) ->
+              best_split working.feature_map splitter
+        in
+        let split_opt =
+          match result with
+            | Some (_,_, split) -> Some split
+            | None -> None
+        in
+        lwt () = send t.srv peer (`AckBestSplit (`Ok split_opt)) in
+        Lwt.return (t, [recv t.srv])
+      )
+    | `Available -> assert false
 
 
 let worker detach : unit =
@@ -113,7 +143,9 @@ let worker detach : unit =
   let t = {
     srv;
     worker_id;
-    user = Unix.getlogin ()
+    user = Unix.getlogin ();
+    state = `Available
+
   } in
   Lwt_main.run (service t threads)
 

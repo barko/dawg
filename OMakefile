@@ -42,7 +42,6 @@ proto_t.mli proto_b.mli proto_j.mli proto_t.ml proto_b.ml proto_j.ml: proto.atd
 FILES[] =
   utils
   iter_literal
-  split
   tS_t
   tS_b
   stream_merge
@@ -83,6 +82,7 @@ FILES[] =
   lP_tcp
   lwt_queue
   worker
+  d_best_split
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \

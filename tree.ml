@@ -1,4 +1,4 @@
-open Split
+open Proto_t
 open Model_t
 
 module Make( L : Loss.LOSS ) = struct
@@ -50,7 +50,7 @@ module Make( L : Loss.LOSS ) = struct
     *)
     directions
 
-  let rec terminate (best_split : Split.t) =
+  let rec terminate (best_split : Proto_t.split) =
     let difference_in_gamma =
       let os =
         match best_split with
@@ -67,14 +67,14 @@ module Make( L : Loss.LOSS ) = struct
           | `CategoricalSplit (os, s_to_k) ->
             let directions = directions_of_split s_to_k os.os_split in
             `CategoricalNode {
-              cn_feature_id = os.os_id;
+              cn_feature_id = os.os_feature_id;
               cn_category_directions = directions;
               cn_left_tree = `Leaf os.os_left.s_gamma;
               cn_right_tree = `Leaf os.os_right.s_gamma;
             }
 
           | `OrdinalSplit os -> `OrdinalNode {
-              on_feature_id = os.os_id;
+              on_feature_id = os.os_feature_id;
               on_split = os.os_split;
               on_left_tree = `Leaf os.os_left.s_gamma;
               on_right_tree = `Leaf os.os_right.s_gamma
@@ -190,14 +190,14 @@ module Make( L : Loss.LOSS ) = struct
               | `CategoricalSplit (os, s_to_k) ->
                 let directions = directions_of_split s_to_k os.os_split in
                 `CategoricalNode {
-                  cn_feature_id = os.os_id;
+                  cn_feature_id = os.os_feature_id;
                   cn_category_directions = directions;
                   cn_left_tree = side_left;
                   cn_right_tree = side_right
                 }
 
               | `OrdinalSplit os -> `OrdinalNode {
-                  on_feature_id = os.os_id;
+                  on_feature_id = os.os_feature_id;
                   on_split = os.os_split;
                   on_left_tree = side_left;
                   on_right_tree = side_right;

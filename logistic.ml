@@ -1,4 +1,4 @@
-open Split
+open Proto_t
 
 let logit ~f ~y =
 
@@ -395,7 +395,7 @@ class splitter y_feature n =
       in_subset := in_subset_;
       update_cum ()
 
-    method best_split feature : (float * Split.t) option =
+    method best_split feature : (float * Proto_t.split) option =
       let feature_id = Feat_utils.id_of_feature feature in
 
       let open Aggregate in
@@ -545,7 +545,7 @@ class splitter y_feature n =
                 in
 
                 let ord_split = {
-                  os_id = feature_id;
+                  os_feature_id = feature_id;
                   os_split = s;
                   os_left = left;
                   os_right = right;
@@ -644,7 +644,7 @@ class splitter y_feature n =
                 in
 
                 let curr_split = `OrdinalSplit {
-                    os_id = feature_id;
+                    os_feature_id = feature_id;
                     os_split = k ;
                     os_left = left ;
                     os_right = right ;

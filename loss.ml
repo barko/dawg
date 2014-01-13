@@ -14,7 +14,7 @@ module type LOSS = sig
   class splitter : Feat.afeature -> int ->
     object
       method clear : unit
-      method best_split : Feat.afeature -> (float * Split.t) option
+      method best_split : Feat.afeature -> (float * Proto_t.split) option
       method boost : float array -> [ `NaN | `Ok ]
       method update_with_subset : bool array -> unit
       method first_tree : bool array -> Model_t.l_tree

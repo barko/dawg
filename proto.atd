@@ -109,7 +109,7 @@ type to_worker = [
 
 type bad_state = [
   | Busy of task_id (* worker is busy working on another task *)
-  | Idle (* worker is unemployed, that is, not working for any master *)
+  | Available (* worker is unemployed, that is, not working for any master *)
 ]
 type common_ack = [ inherit bad_state | Ok ]
 type dont_have_features = [ inherit common_ack | DontHaveFeatures of feature_id list ]
@@ -120,7 +120,7 @@ type from_worker = [
   | AckSetup of dont_have_features
   | AckSetRandomSeed of common_ack
   | AckAddFeatures of dont_have_features
-  | AckBestSplit of [ Ok of split | None | Busy of task_id ]
+  | AckBestSplit of [ inherit bad_state | Ok of split option ]
   | AckId of id
   | AckPush of dont_have_features
   | AckPop of [ inherit common_ack | Empty (* nothing to pop! *) ]
