@@ -43,6 +43,7 @@ let nchoose_fold f threads x0 =
   loop x0 [sleeping_threads] results
 
 type working = {
+  task_id : Proto_t.task_id;
   y_feature_id : Proto_t.feature_id;
   fold_feature_id : Proto_t.feature_id option;
   local_dog_path : string option;
@@ -86,25 +87,33 @@ and react_msg t peer = function
   | _ -> assert false
 
 and best_split t peer task_id =
-  match t.state with
-    | `Working working -> (
-        let result =
-          match working.best_split with
-            | `Logistic (splitter, best_split) ->
-              best_split working.feature_map splitter
+  lwt result =
+    match t.state with
+      | `Working working -> (
+          if task_id = working.task_id then
+            let result =
+              match working.best_split with
+                | `Logistic (splitter, best_split) ->
+                  best_split working.feature_map splitter
 
-            | `Square (splitter, best_split) ->
-              best_split working.feature_map splitter
-        in
-        let split_opt =
-          match result with
-            | Some (_,_, split) -> Some split
-            | None -> None
-        in
-        lwt () = send t.srv peer (`AckBestSplit (`Ok split_opt)) in
-        Lwt.return (t, [recv t.srv])
-      )
-    | `Available -> assert false
+                | `Square (splitter, best_split) ->
+                  best_split working.feature_map splitter
+            in
+            let split_opt =
+              match result with
+                | Some (_,_, split) -> Some split
+                | None -> None
+            in
+            Lwt.return (`Ok split_opt)
+
+          else
+            Lwt.return (`Busy working.task_id)
+        )
+      | `Available -> Lwt.return `Available
+  in
+  lwt () = send t.srv peer (`AckBestSplit result) in
+  Lwt.return (t, [recv t.srv])
+
 
 
 let worker detach : unit =
