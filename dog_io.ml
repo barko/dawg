@@ -24,9 +24,6 @@ let create_writer path num_observations =
   let dog = { features; num_observations } in
   { ouch; dog; num_bytes = 0; is_open = true }
 
-let num_bytes_of_cardinality =
-()
-
 (* can translate [`RLE _] to [`Dense _], but [`Dense _] always remains
    [`Dense _] *)
 let rec write_vector t width_bytes = function
@@ -185,3 +182,52 @@ let create_reader path =
 
 let close_reader { fd } =
   Unix.close fd
+
+
+module RA = struct
+  type t = { (* aka read and append *)
+    (* what is the array encoding the sequence of vectors? *)
+    array : UInt8Array.t;
+
+    (* at which offset into [array] should the next vector be written? *)
+    append_pos : int;
+
+    (* what is the dimension of [array] in bytes? *)
+    size : int
+
+  }
+
+  let create path size =
+    assert (size > 0);
+    let open Unix in
+    (* open a file *)
+    let fd = openfile path [O_CREAT; O_RDWR] 0o640 in
+
+    (* seek to its dimension -- creating a sparse file in that its data
+       is entirely unwritten yet *)
+    let _ = lseek fd size SEEK_CUR in
+
+    let open Bigarray in
+    let shared = false in
+    let array = Array1.map_file fd int8_unsigned c_layout shared size in
+    close fd;
+    { array; size; append_pos = 0 }
+
+  exception TooFull
+
+  let append ra encoded_vec =
+    let { array; size; append_pos } = ra in
+    let remaining_bytes = size - append_pos in
+    let encoded_vec_len = String.length encoded_vec in
+    if remaining_bytes < encoded_vec_len then
+      raise TooFull
+    else
+      for i = 0 to encoded_vec_len - 1 do
+        array.{ append_pos + i } <- Char.code encoded_vec.[i]
+      done;
+    { ra with append_pos = append_pos + encoded_vec_len }
+
+  let array { array } =
+    array
+
+end
