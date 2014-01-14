@@ -125,10 +125,6 @@ module R = struct
     (* what is the array encoding the sequence of vectors? *)
     array : UInt8Array.t;
 
-    (* what is the file descriptor corresponding to the memory-mapped
-       bigarray ? *)
-    fd: Unix.file_descr;
-
     end_array_offset : int;
   }
 
@@ -183,10 +179,8 @@ module R = struct
     (* memory-map file into a char byte bigarray *)
     let array =
       Array1.map_file fd int8_unsigned c_layout shared dim in
-    { dog; array; fd; end_array_offset }
-
-  let close_reader { fd } =
-    Unix.close fd
+    close fd;
+    { dog; array; end_array_offset }
 
 end
 

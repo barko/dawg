@@ -430,8 +430,6 @@ module Make ( L : Loss.LOSS ) = struct
       (* close channel *)
       close_out ouch
     in
-
-    Dog_io.R.close_reader dog_reader
-
+    ()
 end
 

@@ -20,7 +20,6 @@ module R : sig
      byte of the last vector in the sequence, plus one *)
   val end_array_offset : t -> int
 
-  val close_reader : t -> unit
 end
 
 (* read and append *)
