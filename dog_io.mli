@@ -1,22 +1,27 @@
 (* write-only *)
-type w
-val create_writer : string -> int -> w
+module W : sig
+  type t
 
-val add_feature : w -> Feat.lfeature -> unit
+  val create : string -> int -> t
 
-val close_writer : w -> unit
+  val add_feature : t -> Feat.lfeature -> unit
+
+  val close_writer : t -> unit
+end
 
 (* read-only *)
-type r
-val create_reader : string -> r
-val dog : r -> Dog_t.t
-val array : r -> UInt8Array.t
+module R : sig
+  type t
+  val create : string -> t
+  val dog : t -> Dog_t.t
+  val array : t -> UInt8Array.t
 
-(* where does the vector sequence end?  This the offset of the last
-   byte of the last vector in the sequence, plus one *)
-val end_array_offset : r -> int
+  (* where does the vector sequence end?  This the offset of the last
+     byte of the last vector in the sequence, plus one *)
+  val end_array_offset : t -> int
 
-val close_reader : r -> unit
+  val close_reader : t -> unit
+end
 
 (* read and append *)
 module RA : sig
@@ -26,7 +31,7 @@ module RA : sig
      whose path is [path], and whose size is [size] in bytes. *)
 
   exception TooFull
-  val append : t -> string -> t
+  val append : t -> string -> unit
   (* [append t vec] appends string [vec] to [t], raising [TooFull] if
      there's not enough space to do so. *)
 

@@ -31,11 +31,11 @@ let add_to_map features =
   map
 
 let create dog_reader =
-  let dog = Dog_io.dog dog_reader in
+  let dog = Dog_io.R.dog dog_reader in
   let id_to_feature = add_to_map dog.Dog_t.features in
   { id_to_feature;
     num_observations = dog.Dog_t.num_observations;
-    array = Dog_io.array dog_reader;
+    array = Dog_io.R.array dog_reader;
   }
 
 let vector t = function

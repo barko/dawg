@@ -2,8 +2,8 @@ let pr = Printf.printf
 
 let meta path key_opt value_opt =
   let open Feat_map in
-  let reader = Dog_io.create_reader path in
-  let dog = Dog_io.dog reader in
+  let reader = Dog_io.R.create path in
+  let dog = Dog_io.R.dog reader in
   let feature_set = Feat_map.create reader in
 
   match key_opt, value_opt with
@@ -54,8 +54,8 @@ let string_or_empty = function
 
 let meta_short path =
   let open Feat_map in
-  let reader = Dog_io.create_reader path in
-  let _dog = Dog_io.dog reader in
+  let reader = Dog_io.R.create path in
+  let _dog = Dog_io.R.dog reader in
   let feature_map = Feat_map.create reader in
   let open Dog_t in
   Feat_map.iter feature_map (
@@ -70,8 +70,8 @@ let meta_short path =
   )
 
 let select path target_feature_id =
-  let reader = Dog_io.create_reader path in
-  let dog = Dog_io.dog reader in
+  let reader = Dog_io.R.create path in
+  let dog = Dog_io.R.dog reader in
 
   let map = Feat_map.create reader in
   let feature_opt = Feat_map.find_by_id_opt map target_feature_id in

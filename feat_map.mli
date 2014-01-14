@@ -2,7 +2,7 @@ open Dog_t
 
 type t
 
-val create : Dog_io.r -> t
+val create : Dog_io.R.t -> t
 
 val filter : t -> (int -> Feat.ifeature -> bool) -> t
 val find_by_id : t -> int -> Feat.ifeature
