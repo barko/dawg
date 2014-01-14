@@ -225,7 +225,9 @@ module RA = struct
       for i = 0 to encoded_vec_len - 1 do
         array.{ append_pos + i } <- Char.code encoded_vec.[i]
       done;
-    ra.append_pos <- ra.append_pos
+    let pos = ra.append_pos in
+    ra.append_pos <- ra.append_pos + encoded_vec_len;
+    pos (* return location in which [encoded_vec] was written *)
 
   let array { array } =
     array

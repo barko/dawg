@@ -30,9 +30,10 @@ module RA : sig
      whose path is [path], and whose size is [size] in bytes. *)
 
   exception TooFull
-  val append : t -> string -> unit
+  val append : t -> string -> int
   (* [append t vec] appends string [vec] to [t], raising [TooFull] if
-     there's not enough space to do so. *)
+     there's not enough space to do so. Return the position at which
+     the encoded vector was written. *)
 
   val array : t -> UInt8Array.t
 end
