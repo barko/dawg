@@ -42,20 +42,35 @@ let nchoose_fold f threads x0 =
   in
   loop x0 [sleeping_threads] results
 
-type working = {
-  task_id : Proto_t.task_id;
-  y_feature_id : Proto_t.feature_id;
-  fold_feature_id : Proto_t.feature_id option;
-  local_dog_path : string option;
-  best_split : D_best_split.t;
-  feature_map : Feat_map.t;
-}
+module Working = struct
+  type t = {
+    task_id : Proto_t.task_id;
+    y_feature_id : Proto_t.feature_id;
+    fold_feature_id : Proto_t.feature_id option;
+    dog : Dog_io.RA.t;
+    best_split : D_best_split.t;
+    feature_map : Feat_map.t;
+    sampler : Sampler.t;
+    fold_set : bool array;
+  }
+end
+
+module Copying = struct
+  type t = {
+    task_id : Proto_t.task_id;
+    feature_map : Feat_map.t
+  }
+end
 
 type state = [
   | `Available
   (* worker is free to do work for any master that cares for its services *)
 
-  | `Working of working
+  | `Copying of Copying.t
+  (* worker is the destination of a set of features, which are
+     necessary to set up a task *)
+
+  | `Working of Working.t
   (* worker has successfully setup the task; that means
      it has at least the target (y) feature, and the fold
      feature (if one is required) *)
@@ -90,6 +105,7 @@ and best_split t peer task_id =
   lwt result =
     match t.state with
       | `Working working -> (
+          let open Working in
           if task_id = working.task_id then
             let result =
               match working.best_split with
@@ -109,6 +125,7 @@ and best_split t peer task_id =
           else
             Lwt.return (`Busy working.task_id)
         )
+      | `Copying c -> Lwt.return (`Busy c.Copying.task_id)
       | `Available -> Lwt.return `Available
   in
   lwt () = send t.srv peer (`AckBestSplit result) in
