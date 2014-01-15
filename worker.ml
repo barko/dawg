@@ -52,6 +52,7 @@ module Working = struct
     feature_map : Feat_map.t;
     sampler : Sampler.t;
     fold_set : bool array;
+    subsets : bool array list;
   }
 end
 
@@ -98,39 +99,75 @@ and react_msg t peer = function
     let ack_id = `AckId { Proto_b.worker_id = t.worker_id; user = t.user } in
     lwt () = send t.srv peer ack_id in
     Lwt.return (t, [recv t.srv])
-  | `BestSplit task_id -> best_split t peer task_id
+
+  | `Heel task_id -> assert false
+  | `InformPeerHosts _ -> assert false
+
+  | `Task (task_id, working_msg) ->
+    lwt t, result =
+      match t.state with
+        | `Working working -> (
+            let open Working in
+            if task_id = working.task_id then
+              react_working_msg t working working_msg
+            else
+              Lwt.return (t, (`Error "busy/working on another task"))
+          )
+      | `Copying copying ->
+        let open Copying in
+        if task_id = copying.task_id then
+          Lwt.return (t, `Error "busy/copying")
+        else
+          Lwt.return (t, `Error "busy/copying on another task")
+
+      | `Available -> Lwt.return (t, `Error "available")
+    in
+    lwt () = send t.srv peer result in
+    Lwt.return (t, [recv t.srv])
+
+and react_working_msg t working = function
+  | `BestSplit ->
+    let result = best_split working in
+    Lwt.return (t, result)
+
+  | `Sample ->
+    let t, result = sample t working in
+    Lwt.return (t, result)
+
   | _ -> assert false
 
-and best_split t peer task_id =
-  lwt result =
-    match t.state with
-      | `Working working -> (
-          let open Working in
-          if task_id = working.task_id then
-            let result =
-              match working.best_split with
-                | `Logistic (splitter, best_split) ->
-                  best_split working.feature_map splitter
+and best_split working =
+  let open Working in
+  let result =
+    match working.best_split with
+      | `Logistic (splitter, best_split) ->
+        best_split working.feature_map splitter
 
-                | `Square (splitter, best_split) ->
-                  best_split working.feature_map splitter
-            in
-            let split_opt =
-              match result with
-                | Some (_,_, split) -> Some split
-                | None -> None
-            in
-            Lwt.return (`Ok split_opt)
-
-          else
-            Lwt.return (`Busy working.task_id)
-        )
-      | `Copying c -> Lwt.return (`Busy c.Copying.task_id)
-      | `Available -> Lwt.return `Available
+      | `Square (splitter, best_split) ->
+        best_split working.feature_map splitter
   in
-  lwt () = send t.srv peer (`AckBestSplit result) in
-  Lwt.return (t, [recv t.srv])
+  let split_opt =
+    match result with
+      | Some (_,_, split) -> Some split
+      | None -> None
+  in
+  `AckBestSplit split_opt
 
+and sample t working =
+  let open Working in
+  match working.subsets with
+    | [] ->
+      let subset = Sampler.array (
+          fun ~index ~value ->
+            (* sample half the data that is also in the current fold *)
+            working.fold_set.(index) && value mod 2 = 0
+        ) working.sampler in
+      let working = { working with subsets = subset :: working.subsets } in
+      let t = { t with state = `Working working } in
+      t, `AckSample
+
+    | _ ->
+      t, (`Error "subsets not empty")
 
 
 let worker detach : unit =

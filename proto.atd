@@ -18,8 +18,6 @@ type known_worker = (worker_id * host list)
 
 type known_workers = known_worker list
 
-type 'a task = (task_id * 'a)
-
 type setup = {
   y_feature_id : feature_id;
   fold_feature_id : feature_id option;
@@ -64,23 +62,14 @@ type push = {
   split : split
 }
 
-type to_worker = [
-  | Heel of task_id
-  (* client tries to assert his ownership of worker *)
-
-  | Setup of setup task
+type to_worker_with_task = [
+  | Setup of setup
   (* tell the worker about the task; the worker will look for the
-     target and fold features, so, unless it is also given the complete
-     dog file path, it better have at least one collaborating peer to find them *)
+     target and fold features, so, unless it is also given the
+     complete dog file path, it better have at least one collaborating
+     peer to find them *)
 
-  | Id
-  (* what is the worker id? *)
-
-  | InformPeerHosts of host list
-  (* tell the worker of one its peers; it may or may not collaborate
-     on the worker's task *)
-
-  | GetFeaturesFromPeers of ufeature list task
+  | GetFeaturesFromPeers of ufeature list
   (* instruct the worker to acquire these features from any of its
      collaborating peers, if it doesn't already have them; it is not
      guaranteed that a collaborating peer has that feature. *)
@@ -89,14 +78,16 @@ type to_worker = [
   (* get feature _data_ (rather than metadata), from _this_ worker
      (rather than its peers *)
 
-  | SetRandomSeed of int list task
+  | SetRandomSeed of int list
 
-  | AddFeatures of (feature_id list * [BestAndPartition | PartitionOnly]) task
+  | AddFeatures of (feature_id list * [BestAndPartition | PartitionOnly])
   (* add a feature to the set used for finding a best split, or used
      for partitioning of the observations; a feature may
      simultaneously serve as both *)
 
-  | BestSplit of task_id
+  | Sample
+
+  | BestSplit
   (* get the best split among all the features which are elements of
      the [Best] set *)
 
@@ -107,21 +98,30 @@ type to_worker = [
 
 ]
 
-type bad_state = [
-  | Busy of task_id (* worker is busy working on another task *)
-  | Available (* worker is unemployed, that is, not working for any master *)
+type to_worker = [
+  | Heel of task_id
+  (* client tries to assert his ownership of worker *)
+
+  | Id
+  (* what is the worker id? *)
+
+  | InformPeerHosts of host list
+  (* tell the worker of one its peers; it may or may not collaborate
+     on the worker's task *)
+
+  | Task of (task_id * to_worker_with_task)
+
 ]
-type common_ack = [ inherit bad_state | Ok ]
-type dont_have_features = [ inherit common_ack | DontHaveFeatures of feature_id list ]
 
 type from_worker = [
-  | AckHeel of common_ack
-  | AckSetupLocalDogFile of common_ack
-  | AckSetup of dont_have_features
-  | AckSetRandomSeed of common_ack
-  | AckAddFeatures of dont_have_features
-  | AckBestSplit of [ inherit bad_state | Ok of split option ]
+  | Error of string
   | AckId of id
-  | AckPush of dont_have_features
-  | AckPop of [ inherit common_ack | Empty (* nothing to pop! *) ]
+  | AckBestSplit of split option
+  | AckSample
+  | AckHeel
+  | AckSetup
+  | AckSetRandomSeed
+  | AckAddFeatures
+  | AckPush
+  | AckPop
 ]
