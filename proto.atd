@@ -58,7 +58,6 @@ type split = [
 
 type push = {
   feature_id : feature_id ;
-  direction : [ Right | Left ];
   split : split
 }
 
@@ -92,10 +91,10 @@ type to_worker_with_task = [
      the [Best] set *)
 
   | Push of push
-  (* 'descend' to a subpopulation of the observations indicated by [push.split] *)
 
-  | Pop (* ascend *)
+  | Ascend
 
+  | Descend of [Left | Right]
 ]
 
 type to_worker = [
@@ -123,5 +122,6 @@ type from_worker = [
   | AckSetRandomSeed
   | AckAddFeatures
   | AckPush
-  | AckPop
+  | AckAscend
+  | AckDescend
 ]

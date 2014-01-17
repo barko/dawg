@@ -1,3 +1,8 @@
+val partition_observations :
+  bool array ->
+  Feat.afeature ->
+  Proto_t.split -> bool array * bool array
+
 module Make : functor (L : Loss.LOSS) ->
 sig
   type m = {

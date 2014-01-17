@@ -6,6 +6,8 @@ let port = 60_287
    may run on each host, so we refuse to start another on another
    port *)
 
+let sp = Printf.sprintf
+
 let create () =
   LP_tcp.Server.create port
 
@@ -42,6 +44,13 @@ let nchoose_fold f threads x0 =
   in
   loop x0 [sleeping_threads] results
 
+type ba = bool array
+type subset_list = [
+  | `S of (ba * subset_list)
+  | `LR of (ba * ba * subset_list)
+  | `N
+]
+
 module Working = struct
   type t = {
     task_id : Proto_t.task_id;
@@ -52,7 +61,7 @@ module Working = struct
     feature_map : Feat_map.t;
     sampler : Sampler.t;
     fold_set : bool array;
-    subsets : bool array list;
+    subsets : subset_list;
   }
 end
 
@@ -130,44 +139,106 @@ and react_working_msg t working = function
     let result = best_split working in
     Lwt.return (t, result)
 
-  | `Sample ->
-    let t, result = sample t working in
-    Lwt.return (t, result)
+  | `Sample    -> Lwt.return (sample t working)
+  | `Ascend    -> Lwt.return (ascend t working)
+  | `Push p    -> Lwt.return (push t working p)
+  | `Descend d -> Lwt.return (descend t working d)
 
   | _ -> assert false
 
 and best_split working =
   let open Working in
-  let result =
-    match working.best_split with
-      | `Logistic (splitter, best_split) ->
-        best_split working.feature_map splitter
+  match working.subsets with
+    | `LR _ | `N -> `Error "best_split: not in S state"
 
-      | `Square (splitter, best_split) ->
-        best_split working.feature_map splitter
-  in
-  let split_opt =
-    match result with
-      | Some (_,_, split) -> Some split
-      | None -> None
-  in
-  `AckBestSplit split_opt
+    | `S (subset, _) ->
+      let result =
+        match working.best_split with
+          | `Logistic (splitter, best_split) ->
+            splitter#update_with_subset subset;
+            best_split working.feature_map splitter
+
+          | `Square (splitter, best_split) ->
+            splitter#update_with_subset subset;
+            best_split working.feature_map splitter
+      in
+      let split_opt =
+        match result with
+          | Some (_,_, split) -> Some split
+          | None -> None
+      in
+      `AckBestSplit split_opt
 
 and sample t working =
   let open Working in
   match working.subsets with
-    | [] ->
+    | `N ->
       let subset = Sampler.array (
           fun ~index ~value ->
             (* sample half the data that is also in the current fold *)
             working.fold_set.(index) && value mod 2 = 0
         ) working.sampler in
-      let working = { working with subsets = subset :: working.subsets } in
+      let working = { working with subsets = `S ( subset, `N ) } in
       let t = { t with state = `Working working } in
       t, `AckSample
 
-    | _ ->
-      t, (`Error "subsets not empty")
+    | `LR _ | `S _ ->
+      t, `Error "sample: not in N state"
+
+and ascend t working =
+  let open Working in
+  match working.subsets with
+    | `LR (_, _, subsets ) -> (
+        let working = { working with subsets } in
+        let t = { t with state = `Working working } in
+        t, `AckAscend
+      )
+
+    | `S _ | `N  ->
+      t, `Error "ascend: not in LR state"
+
+
+and push t working {Proto_t.split; feature_id} =
+  let open Working in
+  match working.subsets with
+    | `S (subset, _) -> (
+      match Feat_map.find working.feature_map (`Id feature_id) with
+        | None ->
+          t, `Error (sp "push: feature %d not found" feature_id)
+
+        | Some splitting_feature ->
+          (* i -> a *)
+          let splitting_feature = Feat_map.i_to_a working.feature_map
+              splitting_feature in
+          let left, right =
+            Tree.partition_observations subset splitting_feature split in
+          let subsets = `LR (left, right, working.subsets) in
+          let working = { working with subsets } in
+          let t = { t with state = `Working working } in
+          t, `AckPush
+      )
+
+    | `LR _ | `N  ->
+      t, `Error "push: not in S state"
+
+and descend t working direction =
+  let open Working in
+  match working.subsets with
+    | `S _ | `N ->
+      t, `Error "descend: not in LR state"
+
+    | `LR ( left, right, _) ->
+      let subsets =
+        let subset =
+          match direction with
+            | `Left -> left
+            | `Right -> right
+        in
+        `S (subset , working.subsets)
+      in
+      let working = { working with subsets } in
+      let t = { t with state = `Working working } in
+      t, `AckDescend
 
 
 let worker detach : unit =

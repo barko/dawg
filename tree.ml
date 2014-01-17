@@ -1,6 +1,76 @@
 open Proto_t
 open Model_t
 
+let partition_observations in_subset splitting_feature best_split =
+  let in_subset_left  = Array.copy in_subset in
+  let in_subset_right = Array.copy in_subset in
+
+  (match splitting_feature, best_split with
+    | `Ord { Dog_t.o_vector; o_cardinality },
+      `OrdinalSplit { os_split } -> (
+        match o_vector with
+          | `Dense v ->
+            let width_num_bytes = Utils.num_bytes o_cardinality in
+            Vec.iter ~width:width_num_bytes v (
+              fun ~index ~value ->
+                if in_subset.(index) then
+                  let in_left = value <= os_split in
+                  in_subset_left.(index) <- in_left;
+                  in_subset_right.(index) <- not in_left
+            );
+
+          | `RLE v ->
+            Rlevec.iter v (
+              fun ~index ~length ~value ->
+                for i = index to index + length - 1 do
+                  if in_subset.(i) then
+                    let in_left = value <= os_split in
+                    in_subset_left.(i) <- in_left;
+                    in_subset_right.(i) <- not in_left
+                done
+            );
+      )
+
+    | `Cat { Dog_t.c_vector; c_cardinality },
+      `CategoricalSplit ({ os_split }, s_to_k) -> (
+        assert (Array.length s_to_k = c_cardinality);
+
+        (* create reverse mapping *)
+        let s_by_k = Array.create c_cardinality (-1) in
+        for s = 0 to c_cardinality-1 do
+          let k = s_to_k.(s) in
+          s_by_k.(k) <- s;
+        done;
+
+        match c_vector with
+          | `Dense v ->
+            let width_num_bytes = Utils.num_bytes c_cardinality in
+            Vec.iter ~width:width_num_bytes v (
+              fun ~index ~value ->
+                if in_subset.(index) then
+                  let s = s_by_k.(value) in
+                  let in_left = s <= os_split in
+                  in_subset_left.(index) <- in_left;
+                  in_subset_right.(index) <- not in_left
+            );
+
+          | `RLE v ->
+            Rlevec.iter v (
+              fun ~index ~length ~value ->
+                for i = index to index + length - 1 do
+                  if in_subset.(i) then
+                    let s = s_by_k.(value) in
+                    let in_left = s <= os_split in
+                    in_subset_left.(i) <- in_left;
+                    in_subset_right.(i) <- not in_left
+                done
+            );
+      )
+
+    | _ -> assert false
+  );
+  in_subset_left, in_subset_right
+
 module Make( L : Loss.LOSS ) = struct
 
   type m = {
@@ -82,76 +152,6 @@ module Make( L : Loss.LOSS ) = struct
       in
       Some node
 
-  and paritition_observations in_subset splitting_feature best_split =
-    let in_subset_left  = Array.copy in_subset in
-    let in_subset_right = Array.copy in_subset in
-
-    (match splitting_feature, best_split with
-      | `Ord { Dog_t.o_vector; o_cardinality },
-        `OrdinalSplit { os_split } -> (
-          match o_vector with
-            | `Dense v ->
-              let width_num_bytes = Utils.num_bytes o_cardinality in
-              Vec.iter ~width:width_num_bytes v (
-                fun ~index ~value ->
-                  if in_subset.(index) then
-                    let in_left = value <= os_split in
-                    in_subset_left.(index) <- in_left;
-                    in_subset_right.(index) <- not in_left
-              );
-
-            | `RLE v ->
-              Rlevec.iter v (
-                fun ~index ~length ~value ->
-                  for i = index to index + length - 1 do
-                    if in_subset.(i) then
-                      let in_left = value <= os_split in
-                      in_subset_left.(i) <- in_left;
-                      in_subset_right.(i) <- not in_left
-                  done
-              );
-        )
-
-      | `Cat { Dog_t.c_vector; c_cardinality },
-        `CategoricalSplit ({ os_split }, s_to_k) -> (
-          assert (Array.length s_to_k = c_cardinality);
-
-          (* create reverse mapping *)
-          let s_by_k = Array.create c_cardinality (-1) in
-          for s = 0 to c_cardinality-1 do
-            let k = s_to_k.(s) in
-            s_by_k.(k) <- s;
-          done;
-
-          match c_vector with
-            | `Dense v ->
-              let width_num_bytes = Utils.num_bytes c_cardinality in
-              Vec.iter ~width:width_num_bytes v (
-                fun ~index ~value ->
-                  if in_subset.(index) then
-                    let s = s_by_k.(value) in
-                    let in_left = s <= os_split in
-                    in_subset_left.(index) <- in_left;
-                    in_subset_right.(index) <- not in_left
-              );
-
-            | `RLE v ->
-              Rlevec.iter v (
-                fun ~index ~length ~value ->
-                  for i = index to index + length - 1 do
-                    if in_subset.(i) then
-                      let s = s_by_k.(value) in
-                      let in_left = s <= os_split in
-                      in_subset_left.(i) <- in_left;
-                      in_subset_right.(i) <- not in_left
-                  done
-              );
-        )
-
-      | _ -> assert false
-    );
-    in_subset_left, in_subset_right
-
   and make m depth in_subset =
     m.splitter#update_with_subset in_subset;
     match best_split_of_features m with
@@ -165,7 +165,7 @@ module Make( L : Loss.LOSS ) = struct
 
         else
           let in_subset_left, in_subset_right =
-            paritition_observations in_subset splitting_feature split in
+            partition_observations in_subset splitting_feature split in
 
           let os =
             match split with
