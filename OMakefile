@@ -83,6 +83,7 @@ FILES[] =
   lwt_queue
   worker
   d_best_split
+  d_feat_map
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \

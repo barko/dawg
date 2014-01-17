@@ -112,7 +112,7 @@ and react_msg t peer = function
   | `Heel task_id -> assert false
   | `InformPeerHosts _ -> assert false
 
-  | `Task (task_id, working_msg) ->
+  | `Working (task_id, working_msg) ->
     lwt t, result =
       match t.state with
         | `Working working -> (

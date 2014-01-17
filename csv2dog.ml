@@ -585,7 +585,7 @@ let write_feature j i_values n dog feature_id_to_name config =
 
         | `NonUniform cat ->
           Printf.printf "%d: cat\n%!" j;
-          Dog_io.W.add_feature dog cat
+          Dog_io.WO.add_feature dog cat
     else
       raise (MixedTypeFeature j)
   else if kc.n_float > 0 then
@@ -597,7 +597,7 @@ let write_feature j i_values n dog feature_id_to_name config =
 
       | `NonUniform ord ->
         Printf.printf "%d: float\n%!" j;
-        Dog_io.W.add_feature dog ord
+        Dog_io.WO.add_feature dog ord
 
   else if kc.n_int > 0 then
     let int_feat = int_feature j kc hist n i_values
@@ -608,7 +608,7 @@ let write_feature j i_values n dog feature_id_to_name config =
 
       | `NonUniform ord ->
         Printf.printf "%d: int\n%!" j;
-        Dog_io.W.add_feature dog ord
+        Dog_io.WO.add_feature dog ord
 
   else (
     Printf.printf "%d: implicit uniform\n%!" j
@@ -650,10 +650,10 @@ let read_cells_write_features work_dir ~num_cell_files ~num_rows header config =
   | [< >] ->
     write_feature prev_j i_values num_rows dog feature_id_to_name
       config;
-    Dog_io.W.close_writer dog
+    Dog_io.WO.close_writer dog
   in
 
-  let dog = Dog_io.W.create config.output_path num_rows in
+  let dog = Dog_io.WO.create config.output_path num_rows in
 
   (* merge all the files to which cells were written in feature id,
      then (reverse) row id order *)

@@ -6,7 +6,7 @@
 
 open Dog_t
 
-module W = struct
+module WO = struct
 
   type t = {
     ouch : out_channel;
@@ -115,7 +115,7 @@ module W = struct
 
 end
 
-module R = struct
+module RO = struct
 
   type t = {
     (* Feature metadata: what is the metadata, relating raw features to

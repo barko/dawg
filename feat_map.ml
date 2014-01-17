@@ -6,6 +6,7 @@ type t = {
   id_to_feature : Feat.ifeature IntMap.t;
   num_observations : int;
   array : UInt8Array.t;
+  appendable : bool;
 }
 
 let vector_id_of_vector = function
@@ -31,11 +32,12 @@ let add_to_map features =
   map
 
 let create dog_reader =
-  let dog = Dog_io.R.dog dog_reader in
+  let dog = Dog_io.RO.dog dog_reader in
   let id_to_feature = add_to_map dog.Dog_t.features in
   { id_to_feature;
     num_observations = dog.Dog_t.num_observations;
-    array = Dog_io.R.array dog_reader;
+    array = Dog_io.RO.array dog_reader;
+    appendable = false;
   }
 
 let vector t = function
@@ -151,3 +153,4 @@ let find t = function
 let string_of_feature_descr = function
   | `Name name -> Printf.sprintf "name:%s" name
   | `Id id -> Printf.sprintf "id:%d" id
+

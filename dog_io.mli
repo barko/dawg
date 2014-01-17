@@ -1,5 +1,5 @@
 (* write-only *)
-module W : sig
+module WO : sig
   type t
 
   val create : string -> int -> t
@@ -10,7 +10,7 @@ module W : sig
 end
 
 (* read-only *)
-module R : sig
+module RO : sig
   type t
   val create : string -> t
   val dog : t -> Dog_t.t

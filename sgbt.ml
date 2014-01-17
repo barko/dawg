@@ -298,11 +298,11 @@ module Make ( L : Loss.LOSS ) = struct
 
 
   let learn conf =
-    let dog_reader = Dog_io.R.create conf.dog_file_path in
+    let dog_reader = Dog_io.RO.create conf.dog_file_path in
     let feature_map = Feat_map.create dog_reader in
 
     let num_observations =
-      let dog = Dog_io.R.dog dog_reader in
+      let dog = Dog_io.RO.dog dog_reader in
       dog.Dog_t.num_observations
     in
     let n = num_observations in

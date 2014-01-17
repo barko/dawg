@@ -30,6 +30,7 @@ type setup = {
 }
 
 type ufeature <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
+type ifeature <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
 
 type point = {
   (* what is the value of the piecewise function at the split? *)
@@ -61,7 +62,7 @@ type push = {
   split : split
 }
 
-type to_worker_with_task = [
+type to_worker_in_working = [
   | Setup of setup
   (* tell the worker about the task; the worker will look for the
      target and fold features, so, unless it is also given the
@@ -97,6 +98,16 @@ type to_worker_with_task = [
   | Descend of [Left | Right]
 ]
 
+type copy_feature = {
+  feature : ifeature;
+  vector : string
+}
+
+type to_worker_copying = [
+  | Copy of copy_feature list
+  (* add features to the feature map *)
+]
+
 type to_worker = [
   | Heel of task_id
   (* client tries to assert his ownership of worker *)
@@ -108,7 +119,9 @@ type to_worker = [
   (* tell the worker of one its peers; it may or may not collaborate
      on the worker's task *)
 
-  | Task of (task_id * to_worker_with_task)
+  | Working of (task_id * to_worker_in_working)
+
+
 
 ]
 
