@@ -23,17 +23,16 @@ module RO : sig
 end
 
 (* read and append *)
-module RA : sig
+module RW : sig
   type t
-  val create : string -> int -> t
-  (* [create path size] creates a [t], backed by a memory-mapped file
-     whose path is [path], and whose size is [size] in bytes. *)
+  val create : string -> int -> string -> t
+  (* [create path size dog_t_blob] creates a [t], backed by a
+     memory-mapped file whose path is [path], and whose size is [size]
+     in bytes. [dog_t_blob] is the serialization of [Dog_t.t]. *)
 
-  exception TooFull
-  val append : t -> string -> int
-  (* [append t vec] appends string [vec] to [t], raising [TooFull] if
-     there's not enough space to do so. Return the position at which
-     the encoded vector was written. *)
+  val write: t -> int -> string -> unit
+  (* [write t pos vec] writes string [vec] to [t] at position
+     [pos]. *)
 
   val array : t -> UInt8Array.t
 end

@@ -98,7 +98,7 @@ module WO = struct
       (* note the position where we will serialize [Dog.t] *)
       let pos = t.num_bytes in
 
-      (* serialize [Dog.t] *)
+      (* serialize [Dog_t.t] *)
       let dog_s = Dog_b.string_of_t t.dog in
       output_string t.ouch dog_s;
       t.num_bytes <- t.num_bytes + (String.length dog_s);
@@ -184,7 +184,18 @@ module RO = struct
 
 end
 
-module RA = struct
+module RW = struct
+  (* RW represents a feature set, like WO, but whose vectors are
+     written incrementally.  RW is initialized with the metadata
+     [Dog_t.t] for all the features it may contain, along with a
+     fixed-size but empty file buffer.  Feature blobs are subsequently
+     written to that buffer.  The file can eventually evolve to be a
+     complete replica of the file produced by the [WO] module.  It is
+     up to the user of RA to keep track of which features have been
+     written to it.  RA does not check whether the user is reading
+     features that have not yet been written to it, and doing so is
+     unsafe and will lead to errors. *)
+
   type t = { (* aka read and append *)
     (* what is the array encoding the sequence of vectors? *)
     array : UInt8Array.t;
@@ -197,7 +208,7 @@ module RA = struct
 
   }
 
-  let create path size =
+  let create path size dog_t_blob =
     assert (size > 0);
     let open Unix in
     (* open a file *)
@@ -205,29 +216,40 @@ module RA = struct
 
     (* seek to its dimension -- creating a sparse file in that its data
        is entirely unwritten yet *)
-    let _ = lseek fd size SEEK_CUR in
+    let pos = lseek fd size SEEK_CUR in
+    ignore pos;
 
     let open Bigarray in
     let shared = false in
     let array = Array1.map_file fd int8_unsigned c_layout shared size in
     close fd;
+
+    let dog_t_size = String.length dog_t_blob in
+    let dog_t_offset = size - dog_t_size - 8 in
+    assert (dog_t_offset >= 0);
+
+    (* copy [dog_t_blob], so that its last byte is 8 bytes from the
+       end of the (mmap'd) file *)
+    for i = 0 to dog_t_size - 1 do
+      array.{dog_t_offset + i} <- Char.code dog_t_blob.[i]
+    done;
+
+    let dog_t_offset_s = Bi_util.string8_of_int dog_t_offset in
+    assert( String.length dog_t_offset_s = 8 );
+    for i = 0 to 8-1 do
+      array.{size - 8 + i} <- Char.code dog_t_offset_s.[i]
+    done;
+
     { array; size; append_pos = 0 }
 
   exception TooFull
 
-  let append ra encoded_vec =
+  let write ra pos encoded_vec =
     let { array; size; append_pos } = ra in
-    let remaining_bytes = size - append_pos in
     let encoded_vec_len = String.length encoded_vec in
-    if remaining_bytes < encoded_vec_len then
-      raise TooFull
-    else
-      for i = 0 to encoded_vec_len - 1 do
-        array.{ append_pos + i } <- Char.code encoded_vec.[i]
-      done;
-    let pos = ra.append_pos in
-    ra.append_pos <- ra.append_pos + encoded_vec_len;
-    pos (* return location in which [encoded_vec] was written *)
+    for i = 0 to encoded_vec_len - 1 do
+      array.{ pos + i } <- Char.code encoded_vec.[i]
+    done
 
   let array { array } =
     array

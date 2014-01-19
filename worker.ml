@@ -56,7 +56,7 @@ module Working = struct
     task_id : Proto_t.task_id;
     y_feature_id : Proto_t.feature_id;
     fold_feature_id : Proto_t.feature_id option;
-    dog : Dog_io.RA.t;
+    dog : Dog_io.RW.t;
     best_split : D_best_split.t;
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
