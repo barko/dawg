@@ -11,7 +11,7 @@ let partition_observations in_subset splitting_feature best_split =
         match o_vector with
           | `Dense v ->
             let width_num_bytes = Utils.num_bytes o_cardinality in
-            Vec.iter ~width:width_num_bytes v (
+            Dense.iter ~width:width_num_bytes v (
               fun ~index ~value ->
                 if in_subset.(index) then
                   let in_left = value <= os_split in
@@ -45,7 +45,7 @@ let partition_observations in_subset splitting_feature best_split =
         match c_vector with
           | `Dense v ->
             let width_num_bytes = Utils.num_bytes c_cardinality in
-            Vec.iter ~width:width_num_bytes v (
+            Dense.iter ~width:width_num_bytes v (
               fun ~index ~value ->
                 if in_subset.(index) then
                   let s = s_by_k.(value) in
@@ -263,7 +263,7 @@ module Make( L : Loss.LOSS ) = struct
     | `Dense v ->
       let width_num_bytes = Utils.num_bytes cardinality in
       let num_leaves = ref 0 in
-      Vec.iter ~width:width_num_bytes v (
+      Dense.iter ~width:width_num_bytes v (
         fun ~index ~value ->
           let tree = eval_partially_1 feature_id value trees.(index) in
           trees.(index) <- tree;

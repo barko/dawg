@@ -1,3 +1,4 @@
+(* a feature map backed by the read only Dog_io.RO *)
 open Dog_t
 
 module IntMap = Utils.XMap( Utils.Int )
@@ -8,14 +9,6 @@ type t = {
   array : UInt8Array.t;
   appendable : bool;
 }
-
-let vector_id_of_vector = function
-  | `RLE rle -> rle
-  | `Dense dense -> dense
-
-let vector_id_of_feature = function
-  | `Cat cat -> vector_id_of_vector cat.c_vector
-  | `Ord ord -> vector_id_of_vector ord.o_vector
 
 let add_to_map features =
   let map = List.fold_left (
@@ -40,56 +33,15 @@ let create dog_reader =
     appendable = false;
   }
 
-let vector t = function
-  | `RLE rle ->
-    let v = {
-      Rlevec.length = t.num_observations;
-      array = t.array;
-      offset = rle;
-    } in
-   `RLE v
+let offset_to_vec t offset =
+  {
+    Vec.length = t.num_observations;
+    array = t.array;
+    offset = offset;
+  }
 
-  | `Dense dense ->
-    let v = {
-      Vec.length = t.num_observations;
-      array = t.array;
-      offset = dense;
-    } in
-    `Dense v
-
-
-let i_to_a t = function
-  | `Cat {
-      c_feature_id;
-      c_feature_name_opt;
-      c_anonymous_category;
-      c_categories;
-      c_cardinality;
-      c_vector;
-    } ->
-    `Cat {
-      c_feature_id;
-      c_feature_name_opt;
-      c_anonymous_category;
-      c_categories;
-      c_cardinality;
-      c_vector = vector t c_vector;
-    }
-
-  | `Ord {
-      o_feature_id;
-      o_feature_name_opt;
-      o_cardinality;
-      o_breakpoints;
-      o_vector;
-    } ->
-    `Ord {
-      o_feature_id;
-      o_feature_name_opt;
-      o_cardinality;
-      o_breakpoints;
-      o_vector = vector t o_vector;
-    }
+let i_to_a t =
+  Feat_utils.i_to_a (offset_to_vec t)
 
 let iter t f =
   IntMap.iter (
@@ -153,4 +105,3 @@ let find t = function
 let string_of_feature_descr = function
   | `Name name -> Printf.sprintf "name:%s" name
   | `Id id -> Printf.sprintf "id:%d" id
-

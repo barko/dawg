@@ -52,14 +52,14 @@ let get_y_as_array y_feature n =
               match o_breakpoints with
                 | `Float breakpoints ->
                   let breakpoints = Array.of_list breakpoints in
-                  Vec.iter ~width vec (
+                 Dense.iter ~width vec (
                     fun ~index ~value ->
                       y.( index ) <- breakpoints.( value )
                   )
 
                 | `Int breakpoints ->
                   let breakpoints = Array.of_list breakpoints in
-                  Vec.iter ~width vec (
+                  Dense.iter ~width vec (
                     fun ~index ~value ->
                       y.( index ) <- float breakpoints.( value )
                   )
@@ -162,7 +162,7 @@ class splitter y_feature n =
     | `Dense v ->
       let agg = Aggregate.create cardinality in
       let width_num_bytes = Utils.num_bytes cardinality in
-      Vec.iter ~width:width_num_bytes v (
+      Dense.iter ~width:width_num_bytes v (
         fun ~index ~value ->
           if !in_subset.(index) then
             Aggregate.update agg ~value ~n:1 ~l:l.(index)

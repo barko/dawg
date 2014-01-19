@@ -103,7 +103,7 @@ let y_array_of_cat n cat =
             1.0
         in
         match cat.c_vector with
-          | `RLE (rle:Rlevec.v) ->
+          | `RLE (rle:Vec.t) ->
             Rlevec.iter rle (
               fun ~index ~length ~value ->
                 let mp_one = to_plus_minus_one value in
@@ -112,9 +112,9 @@ let y_array_of_cat n cat =
                 done
             );
 
-          | `Dense (vec:Vec.v) ->
+          | `Dense (vec:Vec.t) ->
             let width = Utils.num_bytes cat.c_cardinality in
-            Vec.iter ~width vec (
+            Dense.iter ~width vec (
               fun ~index ~value ->
                 let mp_one = to_plus_minus_one value in
                 y.(index) <- mp_one
@@ -141,7 +141,7 @@ let y_array_of_cat n cat =
 
           | `Dense vec ->
             let width = Utils.num_bytes cat.c_cardinality in
-            Vec.iter ~width vec (
+            Dense.iter ~width vec (
               fun ~index ~value ->
                 let mp_one = zero_one_to_minus_plus_one value in
                 y.(index) <- mp_one
@@ -207,14 +207,14 @@ let y_array_of_ord n ord =
         let width = Utils.num_bytes o_cardinality in
         match o_breakpoints with
           | `Float breakpoints ->
-            Vec.iter ~width vec (
+            Dense.iter ~width vec (
               fun ~index ~value ->
                 let mp_one = map value in
                 y.( index ) <- mp_one
             );
 
           | `Int breakpoints ->
-            Vec.iter ~width vec (
+            Dense.iter ~width vec (
               fun ~index ~value ->
                 let mp_one = map value in
                 y.( index ) <- mp_one
@@ -333,7 +333,7 @@ class splitter y_feature n =
     | `Dense v ->
       let agg = Aggregate.create cardinality in
       let width_num_bytes = Utils.num_bytes cardinality in
-      Vec.iter ~width:width_num_bytes v (
+      Dense.iter ~width:width_num_bytes v (
         fun ~index ~value ->
           if !in_subset.(index) then
             Aggregate.update agg ~value ~n:1 ~l:l.(index)

@@ -59,7 +59,7 @@ FILES[] =
   rlevec
   uInt8Array
   rle
-  vec
+  dense
   logistic
   loss
   sgbt

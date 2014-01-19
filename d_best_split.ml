@@ -1,10 +1,11 @@
 module Make( L : Loss.LOSS ) = struct
 
-  type best_split_of_features = Feat_map.t -> L.splitter ->
-    (Feat.afeature * float * Proto_t.split) option
+  type x = (Feat.afeature * float * Proto_t.split) option
+  type best_split_of_features =
+    ((Feat.ifeature -> x -> x) -> x -> x) -> L.splitter -> x
 
-  let best_split_of_features feature_map splitter =
-    Feat_map.fold feature_map (
+  let best_split_of_features fold splitter : best_split_of_features =
+    fold (
       fun feature best_opt ->
         let s_opt = splitter#best_split feature in
         match best_opt, s_opt with
@@ -16,6 +17,7 @@ module Make( L : Loss.LOSS ) = struct
             else
               (* new champ *)
               Some (feature, loss, split)
+
           | None, Some (loss, split) ->
             (* first guy's always champ *)
             Some (feature, loss, split)

@@ -19,3 +19,6 @@ val folds_of_feature : n:int -> num_folds:int -> Feat.afeature ->
    an array of fold memberships, assigning each observation to a fold.
    For categorical features, [num_folds] must match the cardinality of
    the feature exactly. *)
+
+val i_to_a : (int -> Vec.t) -> Feat.ifeature -> Feat.afeature
+

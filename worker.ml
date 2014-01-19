@@ -58,7 +58,7 @@ module Working = struct
     fold_feature_id : Proto_t.feature_id option;
     dog : Dog_io.RA.t;
     best_split : D_best_split.t;
-    feature_map : Feat_map.t;
+    feature_map : D_feat_map.t;
     sampler : Sampler.t;
     fold_set : bool array;
     subsets : subset_list;
@@ -153,14 +153,15 @@ and best_split working =
 
     | `S (subset, _) ->
       let result =
+        let fold = D_feat_map.fold_active working.feature_map in
         match working.best_split with
           | `Logistic (splitter, best_split) ->
             splitter#update_with_subset subset;
-            best_split working.feature_map splitter
+            best_split fold splitter
 
           | `Square (splitter, best_split) ->
             splitter#update_with_subset subset;
-            best_split working.feature_map splitter
+            best_split fold splitter
       in
       let split_opt =
         match result with
@@ -202,13 +203,13 @@ and push t working {Proto_t.split; feature_id} =
   let open Working in
   match working.subsets with
     | `S (subset, _) -> (
-      match Feat_map.find working.feature_map (`Id feature_id) with
+      match D_feat_map.find working.feature_map feature_id with
         | None ->
           t, `Error (sp "push: feature %d not found" feature_id)
 
         | Some splitting_feature ->
           (* i -> a *)
-          let splitting_feature = Feat_map.i_to_a working.feature_map
+          let splitting_feature = D_feat_map.i_to_a working.feature_map
               splitting_feature in
           let left, right =
             Tree.partition_observations subset splitting_feature split in

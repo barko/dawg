@@ -30,7 +30,7 @@ module WO = struct
      [`Dense _] *)
   let rec write_vector t width_bytes = function
     | `Dense list ->
-      let n_bytes = Vec.write_to_channel t.ouch ~width:width_bytes list in
+      let n_bytes = Dense.write_to_channel t.ouch ~width:width_bytes list in
       let vector_id = t.num_bytes in
       t.num_bytes <- n_bytes + t.num_bytes;
       `Dense vector_id

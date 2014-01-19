@@ -20,8 +20,8 @@ let array_of_afeature = function
                 assert false
             in
             match cat.c_vector with
-              | `RLE (rle:Rlevec.v) ->
-                let result = Array.create rle.Rlevec.length None in
+              | `RLE (rle:Vec.t) ->
+                let result = Array.create rle.Vec.length None in
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
                     let string_opt = string_opt_of_int value in
@@ -31,10 +31,10 @@ let array_of_afeature = function
                 );
                 `StringAnon result
 
-              | `Dense (vec:Vec.v) ->
+              | `Dense (vec:Vec.t) ->
                 let result = Array.create vec.Vec.length None in
                 let width = Utils.num_bytes cat.c_cardinality in
-                Vec.iter ~width vec (
+                Dense.iter ~width vec (
                   fun ~index ~value ->
                     let string_opt = string_opt_of_int value in
                     result.(index) <- string_opt
@@ -45,7 +45,7 @@ let array_of_afeature = function
             let category_0 = List.hd cat.c_categories in
             match cat.c_vector with
               | `RLE rle ->
-                let result = Array.create rle.Rlevec.length category_0 in
+                let result = Array.create rle.Vec.length category_0 in
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
                     let res = categories.( value ) in
@@ -59,7 +59,7 @@ let array_of_afeature = function
               | `Dense vec ->
                 let result = Array.create vec.Vec.length category_0 in
                 let width = Utils.num_bytes cat.c_cardinality in
-                Vec.iter ~width vec (
+                Dense.iter ~width vec (
                   fun ~index ~value ->
                     result.(index) <- categories.( value )
                 );
@@ -72,7 +72,7 @@ let array_of_afeature = function
         | `RLE rle -> (
             match o_breakpoints with
               | `Float breakpoints ->
-                let result = Array.create rle.Rlevec.length 0.0 in
+                let result = Array.create rle.Vec.length 0.0 in
                 let breakpoints = Array.of_list breakpoints in
 
                 Rlevec.iter rle (
@@ -85,7 +85,7 @@ let array_of_afeature = function
                 `Float result
 
               | `Int breakpoints ->
-                let result = Array.create rle.Rlevec.length 0 in
+                let result = Array.create rle.Vec.length 0 in
                 let breakpoints = Array.of_list breakpoints in
 
                 Rlevec.iter rle (
@@ -106,7 +106,7 @@ let array_of_afeature = function
                 let breakpoints = Array.of_list breakpoints in
                 assert (o_cardinality = Array.length breakpoints);
 
-                Vec.iter ~width vec (
+                Dense.iter ~width vec (
                   fun ~index ~value ->
                     result.( index ) <- breakpoints.( value )
                 );
@@ -118,7 +118,7 @@ let array_of_afeature = function
                 let breakpoints = Array.of_list breakpoints in
                 assert (o_cardinality = Array.length breakpoints);
 
-                Vec.iter ~width vec (
+                Dense.iter ~width vec (
                   fun ~index ~value ->
                     result.( index ) <- breakpoints.( value )
                 );
@@ -163,7 +163,7 @@ let folds_of_feature ~n ~num_folds = function
 
         | `Dense vec ->
           let width_num_bytes = Utils.num_bytes o_cardinality in
-          Vec.iter ~width:width_num_bytes vec (
+          Dense.iter ~width:width_num_bytes vec (
             fun ~index ~value ->
               let fold = value / cardinality_per_fold in
               folds.(index) <- fold
@@ -187,9 +187,47 @@ let folds_of_feature ~n ~num_folds = function
 
         | `Dense vec ->
           let width_num_bytes = Utils.num_bytes c_cardinality in
-          Vec.iter ~width:width_num_bytes vec (
+          Dense.iter ~width:width_num_bytes vec (
             fun ~index ~value ->
               folds.(index) <- value
           )
       );
       `Folds folds
+
+let vector f = function
+  | `RLE rle -> `RLE (f rle)
+  | `Dense dense -> `Dense (f dense)
+
+
+let i_to_a f = function
+  | `Cat {
+      c_feature_id;
+      c_feature_name_opt;
+      c_anonymous_category;
+      c_categories;
+      c_cardinality;
+      c_vector;
+    } ->
+    `Cat {
+      c_feature_id;
+      c_feature_name_opt;
+      c_anonymous_category;
+      c_categories;
+      c_cardinality;
+      c_vector = vector f c_vector;
+    }
+
+  | `Ord {
+      o_feature_id;
+      o_feature_name_opt;
+      o_cardinality;
+      o_breakpoints;
+      o_vector;
+    } ->
+    `Ord {
+      o_feature_id;
+      o_feature_name_opt;
+      o_cardinality;
+      o_breakpoints;
+      o_vector = vector f o_vector;
+    }

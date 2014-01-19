@@ -225,29 +225,23 @@ let read_rev =
     assert (offset > 0 && offset < UInt8Array.length t );
     loop t vec_length offset 0 []
 
-type v = {
-  length : int; (* the number of elements in the vector *)
-  array : t; (* the array in which the vector's data is stored *)
-  offset : int; (* the offset into the array where the data is stored *)
-}
-
 let iter =
   let rec loop v f sum_length offset =
-    if sum_length < v.length then
-      let length, value, num_bytes_read = read_run v.array offset in
+    if sum_length < v.Vec.length then
+      let length, value, num_bytes_read = read_run v.Vec.array offset in
       f ~index:sum_length ~length ~value;
       let sum_length = sum_length + length in
       let offset = offset + num_bytes_read in
       loop v f sum_length offset
-    else if sum_length = v.length then
+    else if sum_length = v.Vec.length then
       ()
     else
       assert false
   in
   fun v f ->
-    assert (v.length > 0);
-    assert (v.offset >= 0 && v.offset < UInt8Array.length v.array );
-    loop v f 0 v.offset
+    assert (v.Vec.length > 0);
+    assert (v.Vec.offset >= 0 && v.Vec.offset < UInt8Array.length v.Vec.array );
+    loop v f 0 v.Vec.offset
 
 
 let fold v f x0 =

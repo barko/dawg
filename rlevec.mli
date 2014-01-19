@@ -17,11 +17,6 @@ val write_run : t -> i:int -> length:int -> value:int -> int
 (* [write_run vec ~i ~length ~value] writes a run [length, value]
    to rlevec [vec] at offset [i] *)
 
-type v = {
-  length : int; (* the number of elements in the vector *)
-  array : t; (* the array in which the vector's data is stored *)
-  offset : int; (* the offset into the array where the data is stored *)
-}
-
-val iter : v -> (index:int -> length:int -> value:int -> 'a) -> unit
-val fold : v -> (index:int -> length:int -> value:int -> 'a -> 'a) -> 'a -> 'a
+val iter : Vec.t -> (index:int -> length:int -> value:int -> 'a) -> unit
+val fold : Vec.t -> (index:int -> length:int -> value:int -> 'a -> 'a) ->
+  'a -> 'a
