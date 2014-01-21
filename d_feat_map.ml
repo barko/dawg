@@ -20,14 +20,14 @@ let create dog_ra num_observations =
   num_observations;
 }
 
-let add t feature pos feature_blob status =
+let add t feature vector status =
   let feature_id = Feat_utils.id_of_feature feature in
   if IntMap.mem feature_id t.active_id_to_feature then
     t (* silently drop *)
   else if IntMap.mem feature_id t.inactive_id_to_feature then
     t (* silently drop *)
   else
-    let () = Dog_io.RW.write t.dog_ra pos feature_blob in
+    let () = Dog_io.RW.write t.dog_ra feature_id vector in
     match status with
       | `Active ->
         let active_id_to_feature = IntMap.add feature_id
@@ -39,20 +39,41 @@ let add t feature pos feature_blob status =
             feature t.inactive_id_to_feature in
         { t with inactive_id_to_feature }
 
+exception FeatureIdNotFound of Dog_t.feature_id
+
 let activate t feature_id =
-  assert false
+  try
+    let feature = IntMap.find feature_id t.inactive_id_to_feature in
+    let active_id_to_feature = IntMap.add feature_id feature
+        t.active_id_to_feature in
+    { t with active_id_to_feature }
+  with Not_found ->
+    if IntMap.mem feature_id t.active_id_to_feature then
+      t (* already active: nothing to do *)
+    else
+      raise (FeatureIdNotFound feature_id)
+
 
 let inactivate t feature_id =
-  assert false
-
-let find t feature_id =
   try
-    Some (IntMap.find feature_id t.active_id_to_feature)
+    let feature = IntMap.find feature_id t.active_id_to_feature in
+    let inactive_id_to_feature = IntMap.add feature_id feature
+        t.inactive_id_to_feature in
+    { t with inactive_id_to_feature }
+  with Not_found ->
+    if IntMap.mem feature_id t.inactive_id_to_feature then
+      t (* already inactive: nothing to do *)
+    else
+      raise (FeatureIdNotFound feature_id)
+
+let find_a t feature_id =
+  try
+    IntMap.find feature_id t.active_id_to_feature
   with Not_found ->
     try
-      Some (IntMap.find feature_id t.inactive_id_to_feature)
+      IntMap.find feature_id t.inactive_id_to_feature
     with Not_found ->
-      None
+      raise (FeatureIdNotFound feature_id)
 
 let fold_active t f x0 =
   IntMap.fold (
@@ -68,3 +89,7 @@ let offset_to_vec t offset = {
 
 let i_to_a t ifeature =
   Feat_utils.i_to_a (offset_to_vec t) ifeature
+
+let find_i t feature_id =
+  let ifeature = find_a t feature_id in
+  i_to_a t ifeature

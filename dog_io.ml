@@ -196,19 +196,74 @@ module RW = struct
      features that have not yet been written to it, and doing so is
      unsafe and will lead to errors. *)
 
-  type t = { (* aka read and append *)
+  let vector_id_of_vector = function
+    | `Dense vector_id
+    | `RLE vector_id -> vector_id
+
+  (* a silly name for the pair of vector_id and its corresponding length *)
+  type veq = {
+    vector_id : vector_id;
+    vector_length : int
+  }
+
+  (* create a map between a feature id to the vector (offset into
+     array). [size] is the sum of all bytes used for encoding vectors,
+     that is, excluding the space used for encoding [Dog_t.t]. *)
+  let feature_id_to_vector_of_features { cat_a; ord_a } size =
+
+    let feature_id_to_vector = List.fold_left (
+        fun feature_id_to_vector { c_feature_id; c_vector } ->
+          (c_feature_id, vector_id_of_vector c_vector) :: feature_id_to_vector
+      ) [] cat_a in
+
+    let feature_id_to_vector = List.fold_left (
+        fun feature_id_to_vector { o_feature_id; o_vector } ->
+          (o_feature_id, vector_id_of_vector o_vector) :: feature_id_to_vector
+      ) feature_id_to_vector ord_a in
+
+    (* sort by vector offset -- second element of pair; the bytes for
+       each vector are sequential, without intervenining gap bytes.
+       Therefore, the length of a vector with offset v is the distance
+       in bytes to the subsequent vector.  If the subsequent vector has
+       offset u, the length of the v-vector is u-v. *)
+
+    let feature_id_to_vector = List.sort (
+        fun (feature_id_1, vector_1) (feature_id_2, vector_2) ->
+          Pervasives.compare vector_1 vector_2
+      ) feature_id_to_vector in
+
+    let feature_id_to_veq = Hashtbl.create 100 in
+
+    let rec loop prev_feature_id prev_vector = function
+      | (feature_id, vector) :: rest ->
+        let prev_vector_length = vector - prev_vector in
+        Hashtbl.replace feature_id_to_veq prev_feature_id
+          {vector_id = prev_vector; vector_length = prev_vector_length};
+        loop feature_id vector rest
+      | [] ->
+        let prev_vector_length = size - prev_vector in
+        Hashtbl.replace feature_id_to_veq prev_feature_id
+          {vector_id = prev_vector; vector_length = prev_vector_length};
+    in
+
+    (match feature_id_to_vector with
+      | [] -> () (* empty feature set! *)
+      | (feature_id, vector) :: rest ->
+        loop feature_id vector rest
+    );
+
+    feature_id_to_veq
+
+
+  type t = {
     (* what is the array encoding the sequence of vectors? *)
     array : UInt8Array.t;
 
-    (* at which offset into [array] should the next vector be written? *)
-    mutable append_pos : int;
-
-    (* what is the dimension of [array] in bytes? *)
-    size : int
-
+    (* what is the mapping between a feature id and a veq *)
+    feature_id_to_veq : (feature_id, veq) Hashtbl.t;
   }
 
-  let create path size dog_t_blob =
+  let create path size dog_t =
     assert (size > 0);
     let open Unix in
     (* open a file *)
@@ -224,6 +279,8 @@ module RW = struct
     let array = Array1.map_file fd int8_unsigned c_layout shared size in
     close fd;
 
+    let dog_t_blob = Dog_b.string_of_t dog_t in
+
     let dog_t_size = String.length dog_t_blob in
     let dog_t_offset = size - dog_t_size - 8 in
     assert (dog_t_offset >= 0);
@@ -234,33 +291,57 @@ module RW = struct
       array.{dog_t_offset + i} <- Char.code dog_t_blob.[i]
     done;
 
+    let feature_id_to_veq = feature_id_to_vector_of_features
+        dog_t.features dog_t_offset in
+
     let dog_t_offset_s = Bi_util.string8_of_int dog_t_offset in
     assert( String.length dog_t_offset_s = 8 );
     for i = 0 to 8-1 do
       array.{size - 8 + i} <- Char.code dog_t_offset_s.[i]
     done;
 
-    { array; size; append_pos = 0 }
+    { array; feature_id_to_veq }
 
-  exception TooFull
+  type size_mismatch = {
+    expected : int;
+    actual : int
+  }
 
-  let write ra pos encoded_vec =
-    let { array; size; append_pos } = ra in
-    let encoded_vec_len = String.length encoded_vec in
-    for i = 0 to encoded_vec_len - 1 do
-      array.{ pos + i } <- Char.code encoded_vec.[i]
-    done
+  exception SizeMismatch of size_mismatch
+  exception FeatureIdNotFound of feature_id
 
-  let read ra ~offset ~length =
-    assert( length > 0 );
-    assert( offset >= 0 );
-    assert( offset + length <= ra.size );
-    let buf = String.create length in
-    let array = ra.array in
-    for i = 0 to length-1 do
-      buf.[i] <- Char.chr array.{offset + i}
-    done;
-    buf
+  let write ra feature_id encoded_vec =
+    let { array } = ra in
+    try
+      let { vector_id; vector_length } = Hashtbl.find ra.feature_id_to_veq
+          feature_id in
+      let encoded_vector_length = String.length encoded_vec in
+      if vector_length <> encoded_vector_length then
+        let size_mismatch = {
+          expected = vector_length;
+          actual = encoded_vector_length
+        } in
+        raise (SizeMismatch size_mismatch)
+      else
+        for i = 0 to vector_length - 1 do
+          array.{ vector_id + i } <- Char.code encoded_vec.[i]
+        done
+    with Not_found ->
+      raise (FeatureIdNotFound feature_id)
+
+  let read ra feature_id =
+    try
+
+      let { vector_id; vector_length } = Hashtbl.find ra.feature_id_to_veq
+          feature_id in
+      let buf = String.create vector_length in
+      let array = ra.array in
+      for i = 0 to vector_length - 1 do
+        buf.[i] <- Char.chr array.{ vector_id + i }
+      done;
+      buf
+    with Not_found ->
+      raise (FeatureIdNotFound feature_id)
 
   let array { array } =
     array

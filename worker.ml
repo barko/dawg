@@ -203,20 +203,18 @@ and push t working {Proto_t.split; feature_id} =
   let open Working in
   match working.subsets with
     | `S (subset, _) -> (
-      match D_feat_map.find working.feature_map feature_id with
-        | None ->
-          t, `Error (sp "push: feature %d not found" feature_id)
-
-        | Some splitting_feature ->
-          (* i -> a *)
-          let splitting_feature = D_feat_map.i_to_a working.feature_map
-              splitting_feature in
+        try
+          let splitting_feature = D_feat_map.find_i working.feature_map
+              feature_id in
           let left, right =
             Tree.partition_observations subset splitting_feature split in
           let subsets = `LR (left, right, working.subsets) in
           let working = { working with subsets } in
           let t = { t with state = `Working working } in
           t, `AckPush
+
+        with D_feat_map.FeatureIdNotFound _ ->
+          t, `Error (sp "push: feature %d not found" feature_id)
       )
 
     | `LR _ | `N  ->

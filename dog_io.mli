@@ -25,16 +25,28 @@ end
 (* read and append *)
 module RW : sig
   type t
-  val create : string -> int -> string -> t
-  (* [create path size dog_t_blob] creates a [t], backed by a
+  val create : string -> int -> Dog_t.t -> t
+  (* [create path size dog_t_] creates a [t], backed by a
      memory-mapped file whose path is [path], and whose size is [size]
-     in bytes. [dog_t_blob] is the serialization of [Dog_t.t]. *)
+     in bytes. *)
 
-  val write: t -> int -> string -> unit
-  (* [write t pos vec] writes string [vec] to [t] at position
-     [pos]. *)
+  type size_mismatch = {
+    expected : int;
+    actual : int
+  }
 
-  val read: t -> offset:int -> length:int -> string
+  exception SizeMismatch of size_mismatch
+  exception FeatureIdNotFound of Dog_t.feature_id
+
+  val write: t -> Dog_t.feature_id -> string -> unit
+  (* [write t feature_id vec] writes string [vec] to [t] corresponding
+     to [feature_id] . can raise [SizeMismatch] or
+     [FeatureIdNotFound]. *)
+
+  val read : t -> Dog_t.feature_id -> string
+    (* [read t feature_id] gets the vector corresponding to
+       [feature_id], or else raises [FeatureIdNotFound] *)
 
   val array : t -> UInt8Array.t
+
 end
