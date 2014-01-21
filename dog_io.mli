@@ -34,5 +34,7 @@ module RW : sig
   (* [write t pos vec] writes string [vec] to [t] at position
      [pos]. *)
 
+  val read: t -> offset:int -> length:int -> string
+
   val array : t -> UInt8Array.t
 end

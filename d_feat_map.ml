@@ -20,10 +20,6 @@ let create dog_ra num_observations =
   num_observations;
 }
 
-let set_vector vector = function
-  | `Dense _ -> `Dense vector
-  | `RLE _ -> `RLE vector
-
 let add t feature pos feature_blob status =
   let feature_id = Feat_utils.id_of_feature feature in
   if IntMap.mem feature_id t.active_id_to_feature then

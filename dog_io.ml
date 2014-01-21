@@ -251,6 +251,17 @@ module RW = struct
       array.{ pos + i } <- Char.code encoded_vec.[i]
     done
 
+  let read ra ~offset ~length =
+    assert( length > 0 );
+    assert( offset >= 0 );
+    assert( offset + length <= ra.size );
+    let buf = String.create length in
+    let array = ra.array in
+    for i = 0 to length-1 do
+      buf.[i] <- Char.chr array.{offset + i}
+    done;
+    buf
+
   let array { array } =
     array
 
