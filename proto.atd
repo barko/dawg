@@ -96,6 +96,8 @@ type to_worker_in_working = [
   | Ascend
 
   | Descend of [Left | Right]
+
+  | CopyFeatures of (feature_id * string) list
 ]
 
 type copy_feature = {
@@ -137,4 +139,5 @@ type from_worker = [
   | AckPush
   | AckAscend
   | AckDescend
+  | AckCopyFeatures
 ]

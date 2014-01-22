@@ -64,20 +64,9 @@ module Working = struct
   }
 end
 
-module Copying = struct
-  type t = {
-    task_id : Proto_t.task_id;
-    feature_map : Feat_map.t
-  }
-end
-
 type state = [
   | `Available
   (* worker is free to do work for any master that cares for its services *)
-
-  | `Copying of Copying.t
-  (* worker is the destination of a set of features, which are
-     necessary to set up a task *)
 
   | `Working of Working.t
   (* worker has successfully setup the task; that means
@@ -121,14 +110,8 @@ and react_msg t peer = function
             else
               Lwt.return (t, (`Error "busy/working on another task"))
           )
-      | `Copying copying ->
-        let open Copying in
-        if task_id = copying.task_id then
-          Lwt.return (t, `Error "busy/copying")
-        else
-          Lwt.return (t, `Error "busy/copying on another task")
 
-      | `Available -> Lwt.return (t, `Error "available")
+        | `Available -> Lwt.return (t, `Error "available")
     in
     lwt () = send t.srv peer result in
     Lwt.return (t, [recv t.srv])
@@ -142,6 +125,7 @@ and react_working_msg t working = function
   | `Ascend    -> Lwt.return (ascend t working)
   | `Push p    -> Lwt.return (push t working p)
   | `Descend d -> Lwt.return (descend t working d)
+  | `CopyFeatures cf -> Lwt.return (copy_features t working cf)
 
   | _ -> assert false
 
@@ -230,6 +214,16 @@ and descend t working direction =
       let working = { working with subsets } in
       let t = { t with state = `Working working } in
       t, `AckDescend
+
+and copy_features t working list =
+  let open Working in
+  let feature_map = List.fold_left (
+    fun t (feature_id, vector) ->
+      D_feat_map.add working.feature_map feature_id vector `Active
+    ) working.feature_map list in
+  let working = { working with feature_map } in
+  let t = { t with state = `Working working } in
+  t, `AckCopyFeatures
 
 
 let worker detach : unit =
