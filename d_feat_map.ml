@@ -4,12 +4,8 @@ module IntMap = Utils.XMap( Utils.Int )
 type t = {
   num_observations : int;
   dog_ra : Dog_io.RW.t;
-
-  active_id_to_feature : Feat.ifeature IntMap.t;
-  (* features on which we call best_split *)
-
-  inactive_id_to_feature : Feat.ifeature IntMap.t;
-  (* features upon which we do not call best_split *)
+  active_id_to_feature : Dog_io.RW.qfeature IntMap.t;
+  inactive_id_to_feature : Dog_io.RW.qfeature IntMap.t;
 }
 
 let create dog_ra num_observations =
@@ -20,13 +16,13 @@ let create dog_ra num_observations =
   num_observations;
 }
 
-let add t feature vector status =
-  let feature_id = Feat_utils.id_of_feature feature in
+let add t feature_id vector status =
   if IntMap.mem feature_id t.active_id_to_feature then
     t (* silently drop *)
   else if IntMap.mem feature_id t.inactive_id_to_feature then
     t (* silently drop *)
   else
+    let feature = Dog_io.RW.find t.dog_ra feature_id in
     let () = Dog_io.RW.write t.dog_ra feature_id vector in
     match status with
       | `Active ->
@@ -66,7 +62,7 @@ let inactivate t feature_id =
     else
       raise (FeatureIdNotFound feature_id)
 
-let find_a t feature_id =
+let find_q t feature_id =
   try
     IntMap.find feature_id t.active_id_to_feature
   with Not_found ->
@@ -75,21 +71,83 @@ let find_a t feature_id =
     with Not_found ->
       raise (FeatureIdNotFound feature_id)
 
+let map_vector t = function
+  | `Dense { Dog_io.RW.vector_id } ->
+    `Dense {
+      Vec.length = t.num_observations;
+      array = Dog_io.RW.array t.dog_ra;
+      offset = vector_id;
+    }
+
+  | `RLE { Dog_io.RW.vector_id } ->
+    `RLE {
+      Vec.length = t.num_observations;
+      array = Dog_io.RW.array t.dog_ra;
+      offset = vector_id;
+    }
+
+let q_to_a t = function
+  | `Cat {
+      Dog_t.c_feature_id;
+      c_feature_name_opt;
+      c_anonymous_category;
+      c_categories;
+      c_cardinality;
+      c_vector;
+    } ->
+    `Cat {
+      Dog_t.c_feature_id;
+      c_feature_name_opt;
+      c_anonymous_category;
+      c_categories;
+      c_cardinality;
+      c_vector = map_vector t c_vector;
+    }
+
+  | `Ord {
+      Dog_t.o_feature_id;
+      o_feature_name_opt;
+      o_cardinality;
+      o_breakpoints;
+      o_vector;
+    } ->
+    `Ord {
+      Dog_t.o_feature_id;
+      o_feature_name_opt;
+      o_cardinality;
+      o_breakpoints;
+      o_vector = map_vector t o_vector;
+    }
+
+let find_i t feature_id =
+  let qfeature = find_q t feature_id in
+  q_to_a t qfeature
+
 let fold_active t f x0 =
   IntMap.fold (
     fun feature_id feature x ->
-      f feature x
+      f (q_to_a t feature) x
   ) t.active_id_to_feature x0
 
-let offset_to_vec t offset = {
-  Vec.length = t.num_observations;
-  array = Dog_io.RW.array t.dog_ra;
-  offset = offset;
-}
+let best_split_of_features t splitter  =
+  fold_active t (
+    fun feature best_opt ->
+      let s_opt = splitter#best_split feature in
+      match best_opt, s_opt with
+        | Some (_, best_loss, best_split), Some (loss, split) ->
 
-let i_to_a t ifeature =
-  Feat_utils.i_to_a (offset_to_vec t) ifeature
+          if best_loss < loss then
+            (* still superior *)
+            best_opt
+          else
+            (* new champ *)
+            Some (feature, loss, split)
 
-let find_i t feature_id =
-  let ifeature = find_a t feature_id in
-  i_to_a t ifeature
+        | None, Some (loss, split) ->
+          (* first guy's always champ *)
+          Some (feature, loss, split)
+
+        | Some _, None -> best_opt
+        | None, None -> None
+
+  ) None

@@ -49,4 +49,13 @@ module RW : sig
 
   val array : t -> UInt8Array.t
 
+  type veq = {
+    vector_id : Dog_t.vector_id;
+    vector_length : int
+  }
+
+  type qfeature = (veq, veq) Dog_t.feature
+
+  val find : t -> Dog_t.feature_id -> qfeature
+
 end

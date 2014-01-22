@@ -56,8 +56,7 @@ module Working = struct
     task_id : Proto_t.task_id;
     y_feature_id : Proto_t.feature_id;
     fold_feature_id : Proto_t.feature_id option;
-    dog : Dog_io.RW.t;
-    best_split : D_best_split.t;
+    splitter : < best_split : Feat.afeature -> (float * Proto_t.split) option >;
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
     fold_set : bool array;
@@ -153,15 +152,8 @@ and best_split working =
 
     | `S (subset, _) ->
       let result =
-        let fold = D_feat_map.fold_active working.feature_map in
-        match working.best_split with
-          | `Logistic (splitter, best_split) ->
-            splitter#update_with_subset subset;
-            best_split fold splitter
-
-          | `Square (splitter, best_split) ->
-            splitter#update_with_subset subset;
-            best_split fold splitter
+        D_feat_map.best_split_of_features working.feature_map
+          working.splitter
       in
       let split_opt =
         match result with

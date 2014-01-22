@@ -201,10 +201,21 @@ module RW = struct
     | `RLE vector_id -> vector_id
 
   (* a silly name for the pair of vector_id and its corresponding length *)
+
   type veq = {
     vector_id : vector_id;
     vector_length : int
   }
+
+  module IntMap = Utils.XMap( Utils.Int )
+
+  let anotatate_length vector_length = function
+    | `Dense vector_id -> `Dense { vector_id; vector_length }
+    | `RLE vector_id -> `RLE { vector_id; vector_length }
+
+  let veq_of_feature = function
+    | `Ord { o_vector } -> vector_id_of_vector o_vector
+    | `Cat { c_vector } -> vector_id_of_vector c_vector
 
   (* create a map between a feature id to the vector (offset into
      array). [size] is the sum of all bytes used for encoding vectors,
@@ -237,13 +248,11 @@ module RW = struct
     let rec loop prev_feature_id prev_vector = function
       | (feature_id, vector) :: rest ->
         let prev_vector_length = vector - prev_vector in
-        Hashtbl.replace feature_id_to_veq prev_feature_id
-          {vector_id = prev_vector; vector_length = prev_vector_length};
+        Hashtbl.replace feature_id_to_veq prev_feature_id prev_vector_length;
         loop feature_id vector rest
       | [] ->
         let prev_vector_length = size - prev_vector in
-        Hashtbl.replace feature_id_to_veq prev_feature_id
-          {vector_id = prev_vector; vector_length = prev_vector_length};
+        Hashtbl.replace feature_id_to_veq prev_feature_id prev_vector_length;
     in
 
     (match feature_id_to_vector with
@@ -252,15 +261,34 @@ module RW = struct
         loop feature_id vector rest
     );
 
-    feature_id_to_veq
+    let map = List.fold_left (
+        fun map cat ->
+          let vector_length = Hashtbl.find feature_id_to_veq
+              cat.c_feature_id in
+          let c_vector = anotatate_length vector_length cat.c_vector in
+          let feature = `Cat { cat with c_vector } in
+          IntMap.add cat.c_feature_id feature map
+      ) IntMap.empty cat_a in
 
+    let map = List.fold_left (
+        fun map ord ->
+          let vector_length = Hashtbl.find feature_id_to_veq
+              ord.o_feature_id in
+          let o_vector = anotatate_length vector_length ord.o_vector in
+          let feature = `Ord { ord with o_vector } in
+          IntMap.add ord.o_feature_id feature map
+      ) map ord_a in
+
+    map
+
+  type qfeature = (veq, veq) Dog_t.feature
 
   type t = {
     (* what is the array encoding the sequence of vectors? *)
     array : UInt8Array.t;
 
-    (* what is the mapping between a feature id and a veq *)
-    feature_id_to_veq : (feature_id, veq) Hashtbl.t;
+    (* map feature id to features *)
+    feature_id_to_feature : qfeature IntMap.t;
   }
 
   let create path size dog_t =
@@ -291,8 +319,8 @@ module RW = struct
       array.{dog_t_offset + i} <- Char.code dog_t_blob.[i]
     done;
 
-    let feature_id_to_veq = feature_id_to_vector_of_features
-        dog_t.features dog_t_offset in
+    let feature_id_to_feature =
+      feature_id_to_vector_of_features dog_t.features dog_t_offset in
 
     let dog_t_offset_s = Bi_util.string8_of_int dog_t_offset in
     assert( String.length dog_t_offset_s = 8 );
@@ -300,7 +328,7 @@ module RW = struct
       array.{size - 8 + i} <- Char.code dog_t_offset_s.[i]
     done;
 
-    { array; feature_id_to_veq }
+    { array; feature_id_to_feature }
 
   type size_mismatch = {
     expected : int;
@@ -313,8 +341,8 @@ module RW = struct
   let write ra feature_id encoded_vec =
     let { array } = ra in
     try
-      let { vector_id; vector_length } = Hashtbl.find ra.feature_id_to_veq
-          feature_id in
+      let feature = IntMap.find feature_id ra.feature_id_to_feature in
+      let { vector_id; vector_length } = veq_of_feature feature in
       let encoded_vector_length = String.length encoded_vec in
       if vector_length <> encoded_vector_length then
         let size_mismatch = {
@@ -331,15 +359,20 @@ module RW = struct
 
   let read ra feature_id =
     try
-
-      let { vector_id; vector_length } = Hashtbl.find ra.feature_id_to_veq
-          feature_id in
+      let feature = IntMap.find feature_id ra.feature_id_to_feature in
+      let { vector_id; vector_length } = veq_of_feature feature in
       let buf = String.create vector_length in
       let array = ra.array in
       for i = 0 to vector_length - 1 do
         buf.[i] <- Char.chr array.{ vector_id + i }
       done;
       buf
+    with Not_found ->
+      raise (FeatureIdNotFound feature_id)
+
+  let find ra feature_id =
+    try
+      IntMap.find feature_id ra.feature_id_to_feature
     with Not_found ->
       raise (FeatureIdNotFound feature_id)
 
