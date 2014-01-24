@@ -96,6 +96,11 @@ type state = [
 type t = {
   srv : LP_tcp.Server.t;
   worker_id : string;
+
+  (* path of directory that we use to read and write files in the
+     process of working on tasks *)
+  dot_dawg : string;
+
   user : string;
   state : state;
 }
@@ -184,8 +189,16 @@ and react_available t task_id =
 and react_acquired t task_id = function
   | `Configure conf ->
     let open Proto_t in
-    let path = task_id in (* TODO *)
-    let dog_ra = Dog_io.RW.create path conf.dog_file_size conf.dog_t in
+
+    (* create a directory for the task; it will contain a number of
+       memory-mapped files. *)
+    let task_home = Filename.concat t.dot_dawg task_id in
+    Utils.mkdir_else_exit task_home;
+
+    let dog_ra =
+      let dog_file = Filename.concat task_home "dog" in
+      Dog_io.RW.create dog_file conf.dog_file_size conf.dog_t
+    in
     let feature_map = D_feat_map.create dog_ra in
 
     (* add the target feature *)
@@ -421,6 +434,7 @@ let worker detach : unit =
     srv;
     worker_id;
     user = Unix.getlogin ();
+    dot_dawg;
     state = `Available
 
   } in
