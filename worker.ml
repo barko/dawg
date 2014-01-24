@@ -56,8 +56,7 @@ module Configured = struct
     task_id : Proto_t.task_id;
     y_feature_id : Proto_t.feature_id;
     fold_feature_id_opt : Proto_t.feature_id option;
-    splitter : Logistic.splitter;
-    (* < best_split : Feat.afeature -> (float * Proto_t.split) option >; *)
+    splitter : Loss.splitter;
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
     fold : int array;
@@ -69,7 +68,7 @@ module Learning = struct
     task_id : Proto_t.task_id;
     y_feature_id : Proto_t.feature_id;
     fold_feature_id_opt : Proto_t.feature_id option;
-    splitter : Logistic.splitter;
+    splitter : Loss.splitter;
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
     fold : int array;
@@ -183,14 +182,14 @@ and react_available t task_id =
   t, `AckAcquire true
 
 and react_acquired t task_id = function
-  | `Configure setup ->
+  | `Configure conf ->
     let open Proto_t in
     let path = task_id in (* TODO *)
-    let dog_ra = Dog_io.RW.create path setup.dog_file_size setup.dog_t in
+    let dog_ra = Dog_io.RW.create path conf.dog_file_size conf.dog_t in
     let feature_map = D_feat_map.create dog_ra in
 
     (* add the target feature *)
-    let y_feature_id, y_feature_vector = setup.y_feature in
+    let y_feature_id, y_feature_vector = conf.y_feature in
     let feature_map = D_feat_map.add feature_map y_feature_id
         y_feature_vector `Inactive in
 
@@ -203,18 +202,23 @@ and react_acquired t task_id = function
     in
 
     let num_observations = Dog_io.RW.num_observations dog_ra in
-    let splitter = new Logistic.splitter y_feature num_observations in
+    try
+    let splitter =
+      match conf.loss_type with
+        | `Logistic -> new Logistic.splitter y_feature num_observations
+        | `Square -> new Square.splitter y_feature num_observations
+    in
     let sampler = Sampler.create num_observations in
 
-    let random_state = Random.State.make setup.random_seed in
+    let random_state = Random.State.make conf.random_seed in
     Sampler.shuffle sampler random_state;
 
-    match setup.fold_feature_opt with
+    match conf.fold_feature_opt with
       | None ->
         (* we don't have a fold feature; randomly assign folds *)
         let fold = Sampler.array (
             fun ~index ~value ->
-              value mod setup.num_folds
+              value mod conf.num_folds
           ) sampler in
 
         let configured = Configured.({
@@ -235,36 +239,40 @@ and react_acquired t task_id = function
         try
           let fold_feature = D_feat_map.find_i feature_map fold_feature_id in
           match Feat_utils.folds_of_feature ~n:num_observations
-                  ~num_folds:setup.num_folds fold_feature with
+                  ~num_folds:conf.num_folds fold_feature with
             | `Folds fold ->
 
               let configured =
-              let open Configured in
-              { task_id;
-                y_feature_id;
-                fold_feature_id_opt = Some fold_feature_id;
-                feature_map;
-                sampler;
-                splitter;
-                fold
-              }
-            in
-            { t with state = `Configured configured }, `AckConfigure
+                let open Configured in
+                { task_id;
+                  y_feature_id;
+                  fold_feature_id_opt = Some fold_feature_id;
+                  feature_map;
+                  sampler;
+                  splitter;
+                  fold
+                }
+              in
+              { t with state = `Configured configured }, `AckConfigure
 
-          | `TooManyOrdinalFolds cardinality ->
-            let err = sp "the cardinality of ordinal fold feature (%d) is \
-                          too large relative to the number of folds (%d)"
-                cardinality setup.num_folds in
-            t, `Error err
+            | `TooManyOrdinalFolds cardinality ->
+              let err = sp "the cardinality of ordinal fold feature (%d) is \
+                            too large relative to the number of folds (%d)"
+                  cardinality conf.num_folds in
+              t, `Error err
 
-          | `CategoricalCardinalityMismatch cardinality ->
-            let err = sp "the cardinality of the categorical fold feature (%d) \
-                          must equal the number of folds (%d)"
-                cardinality setup.num_folds in
-            t, `Error err
+            | `CategoricalCardinalityMismatch cardinality ->
+              let err = sp "the cardinality of the categorical fold feature (%d) \
+                            must equal the number of folds (%d)"
+                  cardinality conf.num_folds in
+              t, `Error err
 
-      with Dog_io.RW.FeatureIdNotFound _ ->
-        t, `Error (sp "fold feature %d not found" fold_feature_id)
+        with Dog_io.RW.FeatureIdNotFound _ ->
+          t, `Error (sp "fold feature %d not found" fold_feature_id)
+
+    with
+      | Loss.WrongTargetType -> t, `Error "wrong target type"
+      | Loss.BadTargetDistribution -> t, `Error "bad target distribution"
 
 
 and react_learning_msg t learning = function

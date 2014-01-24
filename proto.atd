@@ -21,8 +21,11 @@ type known_workers = known_worker list
 (* feature metadata *)
 type t <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
 
+type loss_type = [ Logistic | Square ]
+
 type config  = {
   task_id : task_id;
+  loss_type : loss_type;
   dog_t : t;
   dog_file_size : int;
   y_feature : (feature_id * string);
