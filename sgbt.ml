@@ -65,9 +65,18 @@ module Make ( L : Loss.LOSS ) = struct
     )
 
   type learning_iteration = {
-    i : int ; (* iteration number; also, number of trees *)
+    (* iteration number; also, number of trees *)
+    i : int ;
+
+    (* what is the fold currently being held out for the purpose of
+       identifying the optimal termination point? This fold is the
+       validation fold. *)
     fold : int;
+
+    (* is the observation in the 'working folds' or the 'validation
+       fold' ?  *)
     fold_set : bool array;
+
     learning_rate : float;
     first_loss : float;
     prev_loss : float;
