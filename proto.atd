@@ -18,19 +18,23 @@ type known_worker = (worker_id * host list)
 
 type known_workers = known_worker list
 
-type setup = {
-  y_feature_id : feature_id;
-  fold_feature_id : feature_id option;
+(* feature metadata *)
+type t <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
 
-  local_dog_path : string option;
-  (* tell the worker to initialize itself using the dog file at the
-     specified path on its host; the worker will have access to the
-     dog file's features *)
-
+type config  = {
+  task_id : task_id;
+  dog_t : t;
+  dog_file_size : int;
+  y_feature : (feature_id * string);
+  fold_feature_opt : (feature_id * string) option;
+  random_seed : int list <ocaml repr="array">;
+  num_folds : int;
 }
 
+(*
 type ufeature <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
 type ifeature <ocaml_biniou module="Dog_b" ocaml_json module="Dog_j">= abstract
+*)
 
 type point = {
   (* what is the value of the piecewise function at the split? *)
@@ -62,29 +66,31 @@ type push = {
   split : split
 }
 
-type to_worker_in_working = [
-  | Setup of setup
-  (* tell the worker about the task; the worker will look for the
-     target and fold features, so, unless it is also given the
-     complete dog file path, it better have at least one collaborating
-     peer to find them *)
+type to_worker_in_acquired = [
+  | Configure of config
+]
 
-  | GetFeaturesFromPeers of ufeature list
+type to_worker_in_learning_or_configured = [
+  | GetFeaturesFromPeers of feature_id list
   (* instruct the worker to acquire these features from any of its
      collaborating peers, if it doesn't already have them; it is not
      guaranteed that a collaborating peer has that feature. *)
 
   | GetFeatures of feature_id list
   (* get feature _data_ (rather than metadata), from _this_ worker
-     (rather than its peers *)
-
-  | SetRandomSeed of int list
+     (rather than its peers) *)
 
   | AddFeatures of (feature_id list * [BestAndPartition | PartitionOnly])
   (* add a feature to the set used for finding a best split, or used
      for partitioning of the observations; a feature may
      simultaneously serve as both *)
+]
 
+type to_worker_in_configured = [
+  | Learn of int (* fold id *)
+]
+
+type to_worker_in_learning = [
   | Sample
 
   | BestSplit
@@ -100,20 +106,7 @@ type to_worker_in_working = [
   | CopyFeatures of (feature_id * string) list
 ]
 
-type copy_feature = {
-  feature : ifeature;
-  vector : string
-}
-
-type to_worker_copying = [
-  | Copy of copy_feature list
-  (* add features to the feature map *)
-]
-
 type to_worker = [
-  | Heel of task_id
-  (* client tries to assert his ownership of worker *)
-
   | Id
   (* what is the worker id? *)
 
@@ -121,9 +114,14 @@ type to_worker = [
   (* tell the worker of one its peers; it may or may not collaborate
      on the worker's task *)
 
-  | Working of (task_id * to_worker_in_working)
+  | Acquire of task_id
+  (* client tries to assert his ownership of worker *)
 
+  | Acquired of (task_id * to_worker_in_acquired)
 
+  | Configured of (task_id * to_worker_in_configured)
+
+  | Learning of (task_id * to_worker_in_learning)
 
 ]
 
@@ -132,8 +130,8 @@ type from_worker = [
   | AckId of id
   | AckBestSplit of split option
   | AckSample
-  | AckHeel
-  | AckSetup
+  | AckAcquire of bool
+  | AckConfigure
   | AckSetRandomSeed
   | AckAddFeatures
   | AckPush

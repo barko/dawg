@@ -289,6 +289,9 @@ module RW = struct
 
     (* map feature id to features *)
     feature_id_to_feature : qfeature IntMap.t;
+
+    (* what are the number of observations in the feature set *)
+    num_observations : int;
   }
 
   let create path size dog_t =
@@ -328,7 +331,9 @@ module RW = struct
       array.{size - 8 + i} <- Char.code dog_t_offset_s.[i]
     done;
 
-    { array; feature_id_to_feature }
+    let num_observations = dog_t.Dog_t.num_observations in
+
+    { array; feature_id_to_feature; num_observations }
 
   type size_mismatch = {
     expected : int;
@@ -378,5 +383,8 @@ module RW = struct
 
   let array { array } =
     array
+
+  let num_observations { num_observations } =
+    num_observations
 
 end

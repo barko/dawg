@@ -6,7 +6,6 @@ module type LOSS = sig
      (or rather, that continuing is pointless) *)
 
   val string_of_metrics : metrics -> string
-  type model
 
   exception WrongTargetType
   exception BadTargetDistribution

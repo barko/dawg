@@ -8,12 +8,12 @@ type t = {
   inactive_id_to_feature : Dog_io.RW.qfeature IntMap.t;
 }
 
-let create dog_ra num_observations =
+let create dog_ra =
 {
   dog_ra;
   active_id_to_feature = IntMap.empty;
   inactive_id_to_feature = IntMap.empty;
-  num_observations;
+  num_observations = Dog_io.RW.num_observations dog_ra;
 }
 
 let add t feature_id vector status =

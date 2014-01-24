@@ -58,4 +58,6 @@ module RW : sig
 
   val find : t -> Dog_t.feature_id -> qfeature
 
+  val num_observations : t -> int
+
 end

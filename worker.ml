@@ -51,14 +51,29 @@ type subset_list = [
   | `N
 ]
 
-module Working = struct
+module Configured = struct
   type t = {
     task_id : Proto_t.task_id;
     y_feature_id : Proto_t.feature_id;
-    fold_feature_id : Proto_t.feature_id option;
-    splitter : < best_split : Feat.afeature -> (float * Proto_t.split) option >;
+    fold_feature_id_opt : Proto_t.feature_id option;
+    splitter : Logistic.splitter;
+    (* < best_split : Feat.afeature -> (float * Proto_t.split) option >; *)
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
+    fold : int array;
+  }
+end
+
+module Learning = struct
+  type t = {
+    task_id : Proto_t.task_id;
+    y_feature_id : Proto_t.feature_id;
+    fold_feature_id_opt : Proto_t.feature_id option;
+    splitter : Logistic.splitter;
+    feature_map : D_feat_map.t;
+    sampler : Sampler.t;
+    fold : int array;
+
     fold_set : bool array;
     subsets : subset_list;
   }
@@ -68,10 +83,15 @@ type state = [
   | `Available
   (* worker is free to do work for any master that cares for its services *)
 
-  | `Working of Working.t
+  | `Acquired of Proto_t.task_id
+  (* configured is setting up the task *)
+
+  | `Configured of Configured.t
   (* worker has successfully setup the task; that means
      it has at least the target (y) feature, and the fold
      feature (if one is required) *)
+
+  | `Learning of Learning.t
 ]
 
 type t = {
@@ -97,47 +117,177 @@ and react_msg t peer = function
     lwt () = send t.srv peer ack_id in
     Lwt.return (t, [recv t.srv])
 
-  | `Heel task_id -> assert false
   | `InformPeerHosts _ -> assert false
 
-  | `Working (task_id, working_msg) ->
-    lwt t, result =
+  | `Acquire task_id -> (
       match t.state with
-        | `Working working -> (
-            let open Working in
-            if task_id = working.task_id then
-              react_working_msg t working working_msg
+        | `Available ->
+          let t, response = react_available t task_id in
+          lwt () = send t.srv peer response in
+          Lwt.return (t, [recv t.srv])
+
+        | `Acquired _
+        | `Configured _
+        | `Learning _ ->
+          let response = `AckAcquire false in (* not available *)
+          lwt () = send t.srv peer response in
+          Lwt.return (t, [recv t.srv])
+
+    )
+
+  | `Acquired (s_task_id, acquired_msg) -> (
+      match t.state with
+        | `Acquired task_id ->
+          if s_task_id = task_id then
+            let t, response = react_acquired t task_id acquired_msg in
+            lwt () = send t.srv peer response in
+            Lwt.return (t, [recv t.srv])
+          else
+            let response = `Error "busy with another task" in
+            lwt () = send t.srv peer response in
+            Lwt.return (t, [recv t.srv])
+
+        | _ ->
+          let response = `Error "not acquired" in
+          lwt () = send t.srv peer response in
+          Lwt.return (t, [recv t.srv])
+
+    )
+
+  | `Configured (task_id, configured_msg) ->
+    assert false
+
+  | `Learning (task_id, learning_msg) -> (
+    match t.state with
+        | `Learning learning -> (
+            let open Learning in
+            if task_id = learning.task_id then
+              lwt t, result = react_learning_msg t learning learning_msg in
+              lwt () = send t.srv peer result in
+              Lwt.return (t, [recv t.srv])
+
             else
-              Lwt.return (t, (`Error "busy/working on another task"))
+              let result = `Error "busy on another task" in
+              lwt () = send t.srv peer result in
+              Lwt.return (t, [recv t.srv])
           )
 
-        | `Available -> Lwt.return (t, `Error "available")
-    in
-    lwt () = send t.srv peer result in
-    Lwt.return (t, [recv t.srv])
+        | _ ->
+          let response = `Error "not learning" in
+          lwt () = send t.srv peer response in
+          Lwt.return (t, [recv t.srv])
+    )
 
-and react_working_msg t working = function
+and react_available t task_id =
+  let t = { t with state = `Acquired task_id } in
+  t, `AckAcquire true
+
+and react_acquired t task_id = function
+  | `Configure setup ->
+    let open Proto_t in
+    let path = task_id in (* TODO *)
+    let dog_ra = Dog_io.RW.create path setup.dog_file_size setup.dog_t in
+    let feature_map = D_feat_map.create dog_ra in
+
+    (* add the target feature *)
+    let y_feature_id, y_feature_vector = setup.y_feature in
+    let feature_map = D_feat_map.add feature_map y_feature_id
+        y_feature_vector `Inactive in
+
+    (* now extract it *)
+    let y_feature =
+      try
+        D_feat_map.find_i feature_map y_feature_id
+      with Dog_io.RW.FeatureIdNotFound _ ->
+        assert false
+    in
+
+    let num_observations = Dog_io.RW.num_observations dog_ra in
+    let splitter = new Logistic.splitter y_feature num_observations in
+    let sampler = Sampler.create num_observations in
+
+    let random_state = Random.State.make setup.random_seed in
+    Sampler.shuffle sampler random_state;
+
+    match setup.fold_feature_opt with
+      | None ->
+        (* we don't have a fold feature; randomly assign folds *)
+        let fold = Sampler.array (
+            fun ~index ~value ->
+              value mod setup.num_folds
+          ) sampler in
+
+        let configured = Configured.({
+            task_id;
+            y_feature_id;
+            fold_feature_id_opt = None;
+            feature_map;
+            sampler;
+            splitter;
+            fold;
+          }) in
+        { t with state = `Configured configured }, `AckConfigure
+
+      | Some (fold_feature_id, fold_feature_vector) ->
+        let feature_map = D_feat_map.add feature_map fold_feature_id
+            fold_feature_vector `Inactive in
+
+        try
+          let fold_feature = D_feat_map.find_i feature_map fold_feature_id in
+          match Feat_utils.folds_of_feature ~n:num_observations
+                  ~num_folds:setup.num_folds fold_feature with
+            | `Folds fold ->
+
+              let configured =
+              let open Configured in
+              { task_id;
+                y_feature_id;
+                fold_feature_id_opt = Some fold_feature_id;
+                feature_map;
+                sampler;
+                splitter;
+                fold
+              }
+            in
+            { t with state = `Configured configured }, `AckConfigure
+
+          | `TooManyOrdinalFolds cardinality ->
+            let err = sp "the cardinality of ordinal fold feature (%d) is \
+                          too large relative to the number of folds (%d)"
+                cardinality setup.num_folds in
+            t, `Error err
+
+          | `CategoricalCardinalityMismatch cardinality ->
+            let err = sp "the cardinality of the categorical fold feature (%d) \
+                          must equal the number of folds (%d)"
+                cardinality setup.num_folds in
+            t, `Error err
+
+      with Dog_io.RW.FeatureIdNotFound _ ->
+        t, `Error (sp "fold feature %d not found" fold_feature_id)
+
+
+and react_learning_msg t learning = function
   | `BestSplit ->
-    let result = best_split working in
+    let result = best_split learning in
     Lwt.return (t, result)
 
-  | `Sample    -> Lwt.return (sample t working)
-  | `Ascend    -> Lwt.return (ascend t working)
-  | `Push p    -> Lwt.return (push t working p)
-  | `Descend d -> Lwt.return (descend t working d)
-  | `CopyFeatures cf -> Lwt.return (copy_features t working cf)
+  | `Sample    -> Lwt.return (sample t learning)
+  | `Ascend    -> Lwt.return (ascend t learning)
+  | `Push p    -> Lwt.return (push t learning p)
+  | `Descend d -> Lwt.return (descend t learning d)
+  | `CopyFeatures cf ->
+    Lwt.return (copy_features t learning cf)
 
-  | _ -> assert false
-
-and best_split working =
-  let open Working in
-  match working.subsets with
+and best_split learning =
+  let open Learning in
+  match learning.subsets with
     | `LR _ | `N -> `Error "best_split: not in S state"
 
     | `S (subset, _) ->
       let result =
-        D_feat_map.best_split_of_features working.feature_map
-          working.splitter
+        D_feat_map.best_split_of_features learning.feature_map
+          learning.splitter
       in
       let split_opt =
         match result with
@@ -146,28 +296,28 @@ and best_split working =
       in
       `AckBestSplit split_opt
 
-and sample t working =
-  let open Working in
-  match working.subsets with
+and sample t learning =
+  let open Learning in
+  match learning.subsets with
     | `N ->
       let subset = Sampler.array (
           fun ~index ~value ->
             (* sample half the data that is also in the current fold *)
-            working.fold_set.(index) && value mod 2 = 0
-        ) working.sampler in
-      let working = { working with subsets = `S ( subset, `N ) } in
-      let t = { t with state = `Working working } in
+            learning.fold_set.(index) && value mod 2 = 0
+        ) learning.sampler in
+      let learning = { learning with subsets = `S ( subset, `N ) } in
+      let t = { t with state = `Learning learning } in
       t, `AckSample
 
     | `LR _ | `S _ ->
       t, `Error "sample: not in N state"
 
-and ascend t working =
-  let open Working in
-  match working.subsets with
+and ascend t learning =
+  let open Learning in
+  match learning.subsets with
     | `LR (_, _, subsets ) -> (
-        let working = { working with subsets } in
-        let t = { t with state = `Working working } in
+        let learning = { learning with subsets } in
+        let t = { t with state = `Learning learning } in
         t, `AckAscend
       )
 
@@ -175,18 +325,18 @@ and ascend t working =
       t, `Error "ascend: not in LR state"
 
 
-and push t working {Proto_t.split; feature_id} =
-  let open Working in
-  match working.subsets with
+and push t learning {Proto_t.split; feature_id} =
+  let open Learning in
+  match learning.subsets with
     | `S (subset, _) -> (
         try
-          let splitting_feature = D_feat_map.find_i working.feature_map
+          let splitting_feature = D_feat_map.find_i learning.feature_map
               feature_id in
           let left, right =
             Tree.partition_observations subset splitting_feature split in
-          let subsets = `LR (left, right, working.subsets) in
-          let working = { working with subsets } in
-          let t = { t with state = `Working working } in
+          let subsets = `LR (left, right, learning.subsets) in
+          let learning = { learning with subsets } in
+          let t = { t with state = `Learning learning } in
           t, `AckPush
 
         with D_feat_map.FeatureIdNotFound _ ->
@@ -196,9 +346,9 @@ and push t working {Proto_t.split; feature_id} =
     | `LR _ | `N  ->
       t, `Error "push: not in S state"
 
-and descend t working direction =
-  let open Working in
-  match working.subsets with
+and descend t learning direction =
+  let open Learning in
+  match learning.subsets with
     | `S _ | `N ->
       t, `Error "descend: not in LR state"
 
@@ -209,20 +359,20 @@ and descend t working direction =
             | `Left -> left
             | `Right -> right
         in
-        `S (subset , working.subsets)
+        `S (subset , learning.subsets)
       in
-      let working = { working with subsets } in
-      let t = { t with state = `Working working } in
+      let learning = { learning with subsets } in
+      let t = { t with state = `Learning learning } in
       t, `AckDescend
 
-and copy_features t working list =
-  let open Working in
+and copy_features t learning list =
+  let open Learning in
   let feature_map = List.fold_left (
     fun t (feature_id, vector) ->
-      D_feat_map.add working.feature_map feature_id vector `Active
-    ) working.feature_map list in
-  let working = { working with feature_map } in
-  let t = { t with state = `Working working } in
+      D_feat_map.add learning.feature_map feature_id vector `Active
+    ) learning.feature_map list in
+  let learning = { learning with feature_map } in
+  let t = { t with state = `Learning learning } in
   t, `AckCopyFeatures
 
 
