@@ -77,9 +77,6 @@ let string_of_metrics { n; loss; tt; tf; ft; ff } =
   Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
     n loss tt tf ft ff
 
-exception WrongTargetType
-exception BadTargetDistribution
-
 let zero_one_to_minus_plus_one = function
   | 0 -> -.1.
   | 1 ->   1.
@@ -89,7 +86,7 @@ let y_array_of_cat n cat =
   let open Dog_t in
   let y = Array.create n nan in
   if cat.c_cardinality <> 2 then
-    raise WrongTargetType;
+    raise Loss.WrongTargetType;
 
   match cat.c_anonymous_category with
     | Some anon_value -> (
@@ -178,7 +175,7 @@ let y_array_of_ord n ord =
               | _ -> assert false
           )
     else
-      raise WrongTargetType
+      raise Loss.WrongTargetType
   in
 
   (match o_vector with
@@ -269,6 +266,8 @@ end
 (* what would the sum_l be after the split is applied? *)
 let updated_loss ~gamma  ~sum_l ~sum_z ~sum_w =
   sum_l -. gamma *. sum_z +. 0.5 *. gamma *. gamma *. sum_w
+
+exception EmptyFold
 
 class splitter y_feature n =
   let y, positive_category, negative_category_opt =
@@ -656,40 +655,80 @@ class splitter y_feature n =
           !best_split
 
     method metrics mem =
-      let tt = ref 0 in
-      let tf = ref 0 in
-      let ft = ref 0 in
-      let ff = ref 0 in
-      let loss = ref 0.0 in
-      let nn = ref 0 in
+      let wrk_tt = ref 0 in
+      let wrk_tf = ref 0 in
+      let wrk_ft = ref 0 in
+      let wrk_ff = ref 0 in
+      let wrk_loss = ref 0.0 in
+      let wrk_nn = ref 0 in
+
+      let val_tt = ref 0 in
+      let val_tf = ref 0 in
+      let val_ft = ref 0 in
+      let val_ff = ref 0 in
+      let val_loss = ref 0.0 in
+      let val_nn = ref 0 in
 
       for i = 0 to n-1 do
         if mem i then
+          (* working folds *)
           let cell =
             match y.(i) >= 0.0, f.(i) >= 0.0 with
-              | true , true  -> tt
-              | true , false -> tf
-              | false, true  -> ft
-              | false, false -> ff
+              | true , true  -> wrk_tt
+              | true , false -> wrk_tf
+              | false, true  -> wrk_ft
+              | false, false -> wrk_ff
           in
           incr cell;
-          incr nn;
-          loss := !loss +. l.(i)
+          incr wrk_nn;
+          wrk_loss := !wrk_loss +. l.(i)
+        else
+          (* validation fold *)
+          let cell =
+            match y.(i) >= 0.0, f.(i) >= 0.0 with
+              | true , true  -> val_tt
+              | true , false -> val_tf
+              | false, true  -> val_ft
+              | false, false -> val_ff
+          in
+          incr cell;
+          incr val_nn;
+          val_loss := !val_loss +. l.(i)
+
       done;
 
-      let nf = float !nn in
-      if !nn > 0 then
-        let metrics = {
-          n = !nn ;
-          tt = (float !tt) /. nf ;
-          tf = (float !tf) /. nf ;
-          ft = (float !ft) /. nf ;
-          ff = (float !ff) /. nf ;
-          loss = !loss /. nf ;
-        } in
-        Some metrics
+      if !wrk_nn > 0 && !val_nn > 0 then
+        let wrk_nf = float !wrk_nn in
+        let wrk_n = !wrk_nn in
+        let wrk_tt = (float !wrk_tt) /. wrk_nf in
+        let wrk_tf = (float !wrk_tf) /. wrk_nf in
+        let wrk_ft = (float !wrk_ft) /. wrk_nf in
+        let wrk_ff = (float !wrk_ff) /. wrk_nf in
+        let wrk_loss = !wrk_loss /. wrk_nf in
+
+        let val_nf = float !val_nn in
+        let val_n = !val_nn in
+        let val_tt = (float !val_tt) /. val_nf in
+        let val_tf = (float !val_tf) /. val_nf in
+        let val_ft = (float !val_ft) /. val_nf in
+        let val_ff = (float !val_ff) /. val_nf in
+        let val_loss = !val_loss /. val_nf in
+
+        let val_frac_misclassified = val_tf +. val_ft in
+        assert ( val_frac_misclassified >= 0. );
+
+        let has_converged = val_frac_misclassified = 0.0 in
+
+        let s_wrk = Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+            wrk_n wrk_loss wrk_tt wrk_tf wrk_ft wrk_ff in
+
+        let s_val = Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+            val_n val_loss val_tt val_tf val_ft val_ff in
+
+        Loss.( {s_wrk; s_val; has_converged; val_loss} )
+
       else
-        None
+        raise EmptyFold
 
     method first_tree set : Model_t.l_tree =
       assert (Array.length set = n);
@@ -704,7 +743,7 @@ class splitter y_feature n =
       let n_true = !n_true in
       let n_false = n - n_true in
       if n_false = 0 || n_true = 0 then
-        raise BadTargetDistribution
+        raise Loss.BadTargetDistribution
       else
         let mean_y = (float_of_int (n_true - n_false)) /. (float_of_int n)  in
         let gamma0 = 0.5 *. (log ((1.0 +. mean_y) /. (1.0 -. mean_y))) in
@@ -721,4 +760,3 @@ class splitter y_feature n =
       Model_j.write_c_model out_buf model
 
   end
-

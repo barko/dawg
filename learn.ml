@@ -26,9 +26,6 @@ let deadline_of_string str =
       now +. delta_seconds
 
 
-module LogisticSGBT = Sgbt.Make(Logistic)
-module SquareSGBT   = Sgbt.Make(Square)
-
 let feature_descr_of_args name_opt id_opt =
   match name_opt, id_opt with
     | None, None -> None
@@ -131,13 +128,6 @@ let learn
         exit 1
   in
 
-  let module Learner = (
-    val
-      match loss_type with
-        | `Logistic -> (module LogisticSGBT : Sgbt.SGBT)
-        | `Square -> (module SquareSGBT)
-  ) in
-
   let y =
     match feature_descr_of_args y_name_opt y_id_opt with
       | None ->
@@ -150,10 +140,10 @@ let learn
     feature_descr_of_args fold_feature_name_opt fold_feature_id_opt
   in
 
-  let open Learner in
   let conf =
     let open Sgbt in
     {
+      loss_type;
       dog_file_path;
       y;
       num_folds;
@@ -169,22 +159,14 @@ let learn
     }
   in
 
-  (* we only create [LS] so as to generically catch exceptions below *)
-  let module LS = (
-    val
-      match loss_type with
-        | `Logistic -> (module Logistic : Loss.LOSS)
-        | `Square -> (module Square : Loss.LOSS)
-  ) in
-
   try
-    Learner.learn conf
+    Sgbt.learn conf
   with
-    | LS.WrongTargetType ->
+    | Loss.WrongTargetType ->
       pr "target %s is not binary\n%!"
         (Feat_map.string_of_feature_descr y);
       exit 1
-    | LS.BadTargetDistribution ->
+    | Loss.BadTargetDistribution ->
       pr "target %s has a bad distribution\n%!"
         (Feat_map.string_of_feature_descr y);
 

@@ -14,15 +14,12 @@ type model = Model_t.l_regression_model
 let string_of_metrics { n; loss } =
   Printf.sprintf "% 8d %.4e" n loss
 
-exception WrongTargetType
-exception BadTargetDistribution
-
 let get_y_as_array y_feature n =
   let y = Array.create n nan in
   let open Dog_t in
   (match y_feature with
     | `Cat _ ->
-      raise WrongTargetType
+      raise Loss.WrongTargetType
 
     | `Ord { o_vector; o_breakpoints; o_cardinality } -> (
         match o_vector with
@@ -105,6 +102,8 @@ end
 let updated_loss ~gamma  ~sum_l ~sum_z ~sum_n =
   sum_l +. (float sum_n) *. gamma *. gamma -. 2.0 *. gamma *. sum_z
 
+
+exception EmptyFold
 
 class splitter y_feature n =
   let y = get_y_as_array y_feature n in
@@ -465,25 +464,36 @@ class splitter y_feature n =
           !best_split
 
     method metrics mem =
-      let loss = ref 0.0 in
-      let nn = ref 0 in
+      let wrk_loss = ref 0.0 in
+      let wrk_nn = ref 0 in
+      let val_loss = ref 0.0 in
+      let val_nn = ref 0 in
 
       for i = 0 to n-1 do
         if mem i then (
-          incr nn;
-          loss := !loss +. l.(i)
+          incr wrk_nn;
+          wrk_loss := !wrk_loss +. l.(i)
+        )
+        else (
+          incr val_nn;
+          val_loss := !val_loss +. l.(i)
         )
       done;
 
-      let nf = float !nn in
-      if !nn > 0 then
-        let metrics = {
-          n = !nn ;
-          loss = !loss /. nf ;
-        } in
-        Some metrics
+      if !wrk_nn > 0 && !val_nn > 0 then
+        let wrk_nf = float !wrk_nn in
+        let wrk_loss = !wrk_loss /. wrk_nf in
+
+        let val_nf = float !val_nn in
+        let val_loss = !val_loss /. val_nf in
+
+        let s_wrk = Printf.sprintf "% 8d %.4e" !wrk_nn wrk_loss in
+        let s_val = Printf.sprintf "% 8d %.4e" !val_nn val_loss in
+
+        Loss.( { s_wrk; s_val; has_converged = false; val_loss; } )
+
       else
-        None
+        raise EmptyFold
 
     method first_tree set : Model_t.l_tree =
       let sum_y = ref 0.0 in

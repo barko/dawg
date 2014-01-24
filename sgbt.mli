@@ -1,4 +1,7 @@
+type loss_type = [ `Logistic | `Square ]
+
 type conf = {
+  loss_type : loss_type;
   dog_file_path : string;
   num_folds : int;
   min_convergence_rate : float;
@@ -13,8 +16,4 @@ type conf = {
   max_trees_opt : int option;
 }
 
-module type SGBT = sig
-  val learn : conf -> unit
-end
-
-module Make : functor ( L : Loss.LOSS ) -> SGBT
+val learn : conf -> unit
