@@ -38,7 +38,7 @@ type t = {
 
   (* how do we evaluate a tree over all the observations in the
      training set? *)
-  eval : Model_t.l_tree -> float array;
+  eval : (Dog_t.feature_id -> Feat.afeature) -> Model_t.l_tree -> float array;
 
   (* how do we create random paritions of the training set (and
      subsets thereof) ? *)
@@ -57,7 +57,7 @@ let exceed_max_trees num_iters max_trees_opt =
 
 
 let reset t first_tree =
-  let gamma = t.eval first_tree in
+  let gamma = t.eval (Feat_map.a_find_by_id t.feature_map) first_tree in
   t.splitter#clear;
   (match t.splitter#boost gamma with
     | `NaN -> assert false
@@ -114,7 +114,7 @@ let rec learn_with_fold_rate conf t iteration =
 
     | Some tree ->
       let shrunken_tree = Tree.shrink iteration.learning_rate tree in
-      let gamma = t.eval shrunken_tree in
+      let gamma = t.eval (Feat_map.a_find_by_id t.feature_map) shrunken_tree in
 
       match t.splitter#boost gamma with
         | `NaN -> (
@@ -363,7 +363,7 @@ let learn conf =
         new Square.splitter y_feature num_observations
   in
 
-  let eval = Tree.mk_eval num_observations feature_map in
+  let eval = Tree.mk_eval num_observations in
 
   let t = {
     n;

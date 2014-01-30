@@ -320,17 +320,20 @@ module IntMap = Utils.XMap( Utils.Int )
 let mk_eval num_observations =
   let gamma = Array.create num_observations nan in
   let gamma_leaf = Array.create num_observations (`Leaf nan) in
-  fun feature_map tree ->
+  fun find_by_id tree ->
     let feature_id_set = feature_id_set_of_tree tree in
     Array.fill gamma_leaf 0 num_observations tree;
 
     let num_leaves = ref 0 in
     IntSet.iter (
       fun feature_id ->
-        let i_feature = Feat_map.find_by_id feature_map feature_id in
+        let a_feature = find_by_id feature_id in
+        (*
+          let i_feature =
+          Feat_map.i_to_a feature_map i_feature
+        in *)
         let open Dog_t in
-        let cardinality = Feat_utils.cardinality_of_feature i_feature in
-        let a_feature = Feat_map.i_to_a feature_map i_feature in
+        let cardinality = Feat_utils.cardinality_of_feature a_feature in
         let vector = Feat_utils.vector_of_feature a_feature in
         let num_leaves_new = eval_partially gamma_leaf cardinality
             feature_id vector in

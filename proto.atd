@@ -89,8 +89,13 @@ type to_worker_in_learning_or_configured = [
      simultaneously serve as both *)
 ]
 
+type learn = {
+  fold : int ;
+  learning_rate : float
+}
+
 type to_worker_in_configured = [
-  | Learn of int (* fold id *)
+  | Learn of learn
 ]
 
 type to_worker_in_learning = [
@@ -141,4 +146,5 @@ type from_worker = [
   | AckAscend
   | AckDescend
   | AckCopyFeatures
+  | AckLearn
 ]

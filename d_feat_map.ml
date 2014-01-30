@@ -62,7 +62,7 @@ let inactivate t feature_id =
     else
       raise (FeatureIdNotFound feature_id)
 
-let find_q t feature_id =
+let q_find t feature_id =
   try
     IntMap.find feature_id t.active_id_to_feature
   with Not_found ->
@@ -119,8 +119,8 @@ let q_to_a t = function
       o_vector = map_vector t o_vector;
     }
 
-let find_i t feature_id =
-  let qfeature = find_q t feature_id in
+let a_find_by_id t feature_id =
+  let qfeature = q_find t feature_id in
   q_to_a t qfeature
 
 let fold_active t f x0 =

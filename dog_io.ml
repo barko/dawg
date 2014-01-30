@@ -294,7 +294,58 @@ module RW = struct
     num_observations : int;
   }
 
-  let create path size dog_t =
+  let create_r path =
+    let open Unix in
+
+    (* open the file for reading *)
+    let fd = openfile path [O_RDONLY] 0o640 in
+
+    let dog_t_offset =
+
+      (* read the last 8 bytes of the file; it encodes an integer
+         which represents the position of the dog metadata (type
+         [Dog_t.t]). It also represents size of the preceding (first)
+         block of the dog file, which encodes all the bitvectors. *)
+      let pos = lseek fd (-8) SEEK_END in
+      ignore pos;
+      (* Printf.printf "pos=%d\n%!" pos; *)
+
+      let s8 = String.make 8 '\000' in
+      if read fd s8 0 8 <> 8 then
+        failwith (Printf.sprintf "failed to read last 8 bytes of %s" path);
+
+      (* create a Biniou input buffer from the 8-byte string, so we can
+         read a bloody int from it *)
+      let binb = Bi_inbuf.from_string s8 in
+      let dog_t_pos = Bi_io.read_untagged_int64 binb in
+
+      (* Printf.printf "dog pos=%Ld\n%!" dog_t_pos; *)
+      Int64.to_int dog_t_pos
+    in
+
+    let dog_t =
+      let _ = lseek fd dog_t_offset SEEK_SET in
+      let inch = in_channel_of_descr fd in
+      let binb = Bi_inbuf.from_channel inch in
+      Dog_b.read_t binb
+    in
+
+    let open Bigarray in
+    let shared = false in
+    let dim = dog_t_offset in
+    (* memory-map file into a char byte bigarray *)
+    let array =
+      Array1.map_file fd int8_unsigned c_layout shared dim in
+    close fd;
+
+    let num_observations = dog_t.Dog_t.num_observations in
+
+    let feature_id_to_feature =
+      feature_id_to_vector_of_features dog_t.features dog_t_offset in
+
+    { array; num_observations; feature_id_to_feature }
+
+  let create_w path size dog_t =
     assert (size > 0);
     let open Unix in
     (* open a file *)
@@ -334,6 +385,13 @@ module RW = struct
     let num_observations = dog_t.Dog_t.num_observations in
 
     { array; feature_id_to_feature; num_observations }
+
+  let create path write_opt =
+    match write_opt with
+      | Some (size, dog_t) -> (* read-write mode *)
+        create_w path size dog_t
+      | None -> (* read-only *)
+        create_r path
 
   type size_mismatch = {
     expected : int;

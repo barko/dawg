@@ -51,6 +51,9 @@ type subset_list = [
   | `N
 ]
 
+type eval = (Dog_t.feature_id -> Feat.afeature) ->
+  Model_t.l_tree -> float array
+
 module Configured = struct
   type t = {
     task_id : Proto_t.task_id;
@@ -60,6 +63,8 @@ module Configured = struct
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
     fold : int array;
+    eval : eval;
+    num_observations : int;
   }
 end
 
@@ -72,6 +77,8 @@ module Learning = struct
     feature_map : D_feat_map.t;
     sampler : Sampler.t;
     fold : int array;
+    eval : eval;
+    num_observations : int;
 
     fold_set : bool array;
     subsets : subset_list;
@@ -158,11 +165,25 @@ and react_msg t peer = function
 
     )
 
-  | `Configured (task_id, configured_msg) ->
-    assert false
+  | `Configured (s_task_id, configured_msg) -> (
+      lwt t, response =
+        match t.state with
+          | `Configured conf ->
+            let open Configured in
+            if s_task_id = conf.task_id then
+              Lwt.return (react_configured t conf configured_msg)
+            else
+              Lwt.return (t, `Error "busy with another task")
+
+          | _ ->
+            Lwt.return (t, `Error "not configured")
+      in
+      lwt () = send t.srv peer response in
+      Lwt.return (t, [recv t.srv])
+    )
 
   | `Learning (task_id, learning_msg) -> (
-    match t.state with
+      match t.state with
         | `Learning learning -> (
             let open Learning in
             if task_id = learning.task_id then
@@ -197,7 +218,7 @@ and react_acquired t task_id = function
 
     let dog_ra =
       let dog_file = Filename.concat task_home "dog" in
-      Dog_io.RW.create dog_file conf.dog_file_size conf.dog_t
+      Dog_io.RW.create dog_file (Some (conf.dog_file_size, conf.dog_t))
     in
     let feature_map = D_feat_map.create dog_ra in
 
@@ -209,7 +230,7 @@ and react_acquired t task_id = function
     (* now extract it *)
     let y_feature =
       try
-        D_feat_map.find_i feature_map y_feature_id
+        D_feat_map.a_find_by_id feature_map y_feature_id
       with Dog_io.RW.FeatureIdNotFound _ ->
         assert false
     in
@@ -222,7 +243,7 @@ and react_acquired t task_id = function
         | `Square -> new Square.splitter y_feature num_observations
     in
     let sampler = Sampler.create num_observations in
-
+    let eval = Tree.mk_eval num_observations in
     let random_state = Random.State.make conf.random_seed in
     Sampler.shuffle sampler random_state;
 
@@ -242,6 +263,8 @@ and react_acquired t task_id = function
             sampler;
             splitter;
             fold;
+            eval;
+            num_observations;
           }) in
         { t with state = `Configured configured }, `AckConfigure
 
@@ -250,7 +273,8 @@ and react_acquired t task_id = function
             fold_feature_vector `Inactive in
 
         try
-          let fold_feature = D_feat_map.find_i feature_map fold_feature_id in
+          let fold_feature = D_feat_map.a_find_by_id feature_map
+              fold_feature_id in
           match Feat_utils.folds_of_feature ~n:num_observations
                   ~num_folds:conf.num_folds fold_feature with
             | `Folds fold ->
@@ -263,7 +287,9 @@ and react_acquired t task_id = function
                   feature_map;
                   sampler;
                   splitter;
-                  fold
+                  fold;
+                  eval;
+                  num_observations;
                 }
               in
               { t with state = `Configured configured }, `AckConfigure
@@ -351,7 +377,7 @@ and push t learning {Proto_t.split; feature_id} =
   match learning.subsets with
     | `S (subset, _) -> (
         try
-          let splitting_feature = D_feat_map.find_i learning.feature_map
+          let splitting_feature = D_feat_map.a_find_by_id learning.feature_map
               feature_id in
           let left, right =
             Tree.partition_observations subset splitting_feature split in
@@ -396,6 +422,42 @@ and copy_features t learning list =
   let t = { t with state = `Learning learning } in
   t, `AckCopyFeatures
 
+and react_configured t configured = function
+  | `Learn {Proto_t.fold; learning_rate} ->
+    assert( fold >= 0 );
+    assert (learning_rate > 0.0);
+
+    let open Configured in
+    let fold_set = Array.init configured.num_observations
+        (fun i -> configured.fold.(i) <> fold) in
+
+    let gamma =
+      let leaf0 = configured.splitter#first_tree fold_set in
+      let first_tree = Tree.shrink learning_rate leaf0 in
+      configured.eval
+        (D_feat_map.a_find_by_id configured.feature_map) first_tree in
+    configured.splitter#clear;
+    (match configured.splitter#boost gamma with
+      | `NaN -> assert false
+      | `Ok -> ()
+    );
+
+    let learning = {
+      Learning.task_id = configured.task_id;
+      y_feature_id = configured.y_feature_id;
+      fold_feature_id_opt = configured.fold_feature_id_opt;
+      feature_map = configured.feature_map;
+      sampler = configured.sampler;
+      splitter = configured.splitter;
+      fold = configured.fold;
+      eval = configured.eval;
+      num_observations = configured.num_observations;
+      fold_set;
+      subsets = `N;
+    } in
+    let state = `Learning learning in
+    let t = { t with state } in
+    t, `AckLearn
 
 let worker detach : unit =
   (* igore SIGPIPE's *)

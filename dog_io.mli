@@ -25,7 +25,8 @@ end
 (* read and append *)
 module RW : sig
   type t
-  val create : string -> int -> Dog_t.t -> t
+  val create : string -> (int * Dog_b.t) option -> t
+  (* val create : string -> int -> Dog_t.t -> t *)
   (* [create path size dog_t_] creates a [t], backed by a
      memory-mapped file whose path is [path], and whose size is [size]
      in bytes. *)

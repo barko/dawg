@@ -104,14 +104,14 @@ let rec tree_l_to_c id_to_breakpoints = function
 
 let rec add_features_of_tree feature_set map = function
   | `CategoricalNode { cn_feature_id; cn_left_tree; cn_right_tree } ->
-    let feature = Feat_map.find_by_id feature_set cn_feature_id in
+    let feature = Feat_map.i_find_by_id feature_set cn_feature_id in
     let map = IntMap.add cn_feature_id feature map in
     let map = add_features_of_tree feature_set map cn_left_tree in
     let map = add_features_of_tree feature_set map cn_right_tree in
     map
 
   | `OrdinalNode { on_feature_id; on_left_tree; on_right_tree } ->
-    let feature = Feat_map.find_by_id feature_set on_feature_id in
+    let feature = Feat_map.i_find_by_id feature_set on_feature_id in
     let map = IntMap.add on_feature_id feature map in
     let map = add_features_of_tree feature_set map on_left_tree in
     let map = add_features_of_tree feature_set map on_right_tree in

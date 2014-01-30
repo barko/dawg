@@ -61,12 +61,15 @@ let filter t f =
   let id_to_feature = IntMap.filter f t.id_to_feature in
   { t with id_to_feature }
 
-let find_by_id t feature_id =
+let i_find_by_id t feature_id =
   IntMap.find feature_id t.id_to_feature
 
-let find_by_id_opt t feature_id =
+let a_find_by_id t feature_id =
+  i_to_a t (i_find_by_id t feature_id)
+
+let i_find_by_id_opt t feature_id =
   try
-    Some (find_by_id t feature_id)
+    Some (i_find_by_id t feature_id)
   with Not_found ->
     None
 
@@ -77,7 +80,7 @@ let remove t feature_id =
 let length t =
   IntMap.fold (fun _ _ c -> c + 1) t.id_to_feature 0
 
-let find_by_name_opt t feature_name =
+let i_find_by_name_opt t feature_name =
   let features = IntMap.fold (
     fun _ feature accu ->
       match feature with
@@ -99,8 +102,8 @@ let find_by_name_opt t feature_name =
 type feature_descr = [ `Name of string | `Id of int ]
 
 let find t = function
-  | `Name name -> find_by_name_opt t name
-  | `Id id -> find_by_id_opt t id
+  | `Name name -> i_find_by_name_opt t name
+  | `Id id -> i_find_by_id_opt t id
 
 let string_of_feature_descr = function
   | `Name name -> Printf.sprintf "name:%s" name

@@ -10,7 +10,7 @@ let meta path key_opt value_opt =
     | Some "id", Some value -> (
         let target_feature_id = int_of_string value in
         try
-          let feature = Feat_map.find_by_id feature_set target_feature_id in
+          let feature = Feat_map.i_find_by_id feature_set target_feature_id in
           let feature_s = Dog_j.string_of_ifeature feature in
           print_endline (Yojson.Safe.prettify feature_s)
         with Not_found ->
@@ -19,7 +19,7 @@ let meta path key_opt value_opt =
       )
 
     | Some "name", Some value -> (
-        let feature_opt = Feat_map.find_by_name_opt feature_set value in
+        let feature_opt = Feat_map.i_find_by_name_opt feature_set value in
         match feature_opt with
           | Some feature ->
             let feature_s = Dog_j.string_of_ifeature feature in
@@ -74,7 +74,7 @@ let select path target_feature_id =
   let dog = Dog_io.RO.dog reader in
 
   let map = Feat_map.create reader in
-  let feature_opt = Feat_map.find_by_id_opt map target_feature_id in
+  let feature_opt = Feat_map.i_find_by_id_opt map target_feature_id in
   let ifeature =
     match feature_opt with
       | None ->
