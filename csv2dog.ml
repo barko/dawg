@@ -153,7 +153,7 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
       c + 1, f
     )
     else (
-      Printf.printf "sortting ... %!";
+      Printf.printf "sorting ... %!";
       Array.sort compare_cells cells;
       Printf.printf "done\n%!";
       write_cells_to_file work_dir f cells;

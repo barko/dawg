@@ -160,3 +160,11 @@ let bi_write_to_file write path v =
   Bi_outbuf.flush_output_writer bouch;
   close_out ouch
 
+(* returns a non-normalized absolute path *)
+let abspath file_path =
+  if Filename.is_relative file_path then
+    Filename.concat (Unix.getcwd ()) file_path
+  else
+    file_path
+
+

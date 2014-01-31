@@ -40,3 +40,7 @@ val bi_read_from_file : (Bi_inbuf.t -> 'a) -> string -> 'a
 
 val bi_write_to_file : (Bi_outbuf.t -> 'a -> unit) -> string -> 'a -> unit
 (* write a biniou-serialized value to a file *)
+
+val abspath : string -> string
+  (* returns a non-normalized absolute path *)
+
