@@ -32,3 +32,7 @@ val num_bytes : int -> int
 
 val fold_range : (int -> 'a -> 'a) -> start:int -> finix:int -> 'a -> 'a
 val iter_range : (int -> unit) -> start:int -> finix:int -> unit
+
+val abspath : string -> string
+  (* returns a non-normalized absolute path *)
+

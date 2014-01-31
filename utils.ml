@@ -133,3 +133,11 @@ let rec iter_range f ~start ~finix =
     f start;
     iter_range f ~start:(start+1) ~finix
   )
+
+(* returns a non-normalized absolute path *)
+let abspath file_path =
+  if Filename.is_relative file_path then
+    Filename.concat (Unix.getcwd ()) file_path
+  else
+    file_path
+
