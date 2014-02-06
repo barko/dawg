@@ -83,6 +83,9 @@ FILES[] =
   lwt_queue
   worker
   d_feat_map
+  worker_client
+  d_sgbt
+  d_tree
 
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \

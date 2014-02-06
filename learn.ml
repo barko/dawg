@@ -164,11 +164,11 @@ let learn
   with
     | Loss.WrongTargetType ->
       pr "target %s is not binary\n%!"
-        (Feat_map.string_of_feature_descr y);
+        (Feat_utils.string_of_feature_descr y);
       exit 1
     | Loss.BadTargetDistribution ->
       pr "target %s has a bad distribution\n%!"
-        (Feat_map.string_of_feature_descr y);
+        (Feat_utils.string_of_feature_descr y);
 
 
 open Cmdliner

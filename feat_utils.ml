@@ -231,3 +231,9 @@ let i_to_a f = function
       o_breakpoints;
       o_vector = vector f o_vector;
     }
+
+type feature_descr = [ `Name of string | `Id of int ]
+
+let string_of_feature_descr = function
+  | `Name name -> Printf.sprintf "name:%s" name
+  | `Id id -> Printf.sprintf "id:%d" id

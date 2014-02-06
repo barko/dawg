@@ -99,12 +99,7 @@ let i_find_by_name_opt t feature_name =
     | [ feature ] -> Some feature
     | _ -> assert false
 
-type feature_descr = [ `Name of string | `Id of int ]
-
 let find t = function
   | `Name name -> i_find_by_name_opt t name
   | `Id id -> i_find_by_id_opt t id
 
-let string_of_feature_descr = function
-  | `Name name -> Printf.sprintf "name:%s" name
-  | `Id id -> Printf.sprintf "id:%d" id

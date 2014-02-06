@@ -1,4 +1,4 @@
-(* a feature map backed by the read-append Dog_io.RA *)
+(* a feature map backed by the read-append Dog_io.RW *)
 module IntMap = Utils.XMap( Utils.Int )
 
 type t = {
@@ -16,26 +16,29 @@ let create dog_ra =
   num_observations = Dog_io.RW.num_observations dog_ra;
 }
 
+exception FeatureIdNotFound of Dog_t.feature_id
+
 let add t feature_id vector status =
   if IntMap.mem feature_id t.active_id_to_feature then
     t (* silently drop *)
   else if IntMap.mem feature_id t.inactive_id_to_feature then
     t (* silently drop *)
   else
-    let feature = Dog_io.RW.find t.dog_ra feature_id in
-    let () = Dog_io.RW.write t.dog_ra feature_id vector in
-    match status with
-      | `Active ->
-        let active_id_to_feature = IntMap.add feature_id
-            feature t.active_id_to_feature in
-        { t with active_id_to_feature }
+    try
+      let feature = Dog_io.RW.find t.dog_ra feature_id in
+      let () = Dog_io.RW.write t.dog_ra feature_id vector in
+      match status with
+        | `Active ->
+          let active_id_to_feature = IntMap.add feature_id
+              feature t.active_id_to_feature in
+          { t with active_id_to_feature }
 
-      | `Inactive ->
-        let inactive_id_to_feature = IntMap.add feature_id
-            feature t.inactive_id_to_feature in
-        { t with inactive_id_to_feature }
-
-exception FeatureIdNotFound of Dog_t.feature_id
+        | `Inactive ->
+          let inactive_id_to_feature = IntMap.add feature_id
+              feature t.inactive_id_to_feature in
+          { t with inactive_id_to_feature }
+    with (Dog_io.RW.FeatureIdNotFound _) ->
+      raise (FeatureIdNotFound feature_id)
 
 let activate t feature_id =
   try
@@ -50,7 +53,7 @@ let activate t feature_id =
       raise (FeatureIdNotFound feature_id)
 
 
-let inactivate t feature_id =
+let deactivate t feature_id =
   try
     let feature = IntMap.find feature_id t.active_id_to_feature in
     let inactive_id_to_feature = IntMap.add feature_id feature
@@ -61,6 +64,20 @@ let inactivate t feature_id =
       t (* already inactive: nothing to do *)
     else
       raise (FeatureIdNotFound feature_id)
+
+let deactivate_if t f =
+  let active_id_to_feature, inactive_id_to_feature = IntMap.fold (
+    fun feature_id feature (active, inactive) ->
+      if f feature then
+        let inactive = IntMap.add feature_id feature inactive in
+        active, inactive
+      else
+        let active = IntMap.add feature_id feature active in
+        active, inactive
+    ) t.active_id_to_feature (IntMap.empty, IntMap.empty)
+  in
+  { t with active_id_to_feature; inactive_id_to_feature }
+
 
 let q_find t feature_id =
   try
@@ -151,3 +168,39 @@ let best_split_of_features t splitter  =
         | None, None -> None
 
   ) None
+
+let q_find_all_by_name feature_name map =
+  (* since feature names are not unique, we may have multiple features
+     satisfying the query *)
+  IntMap.fold (
+    fun _ feature features ->
+      match Feat_utils.name_of_feature feature with
+        | Some fn ->
+          if fn = feature_name then
+            feature :: features
+          else
+            features
+        | None -> features
+  ) map []
+
+let q_find_all_by_name t feature_name =
+  (q_find_all_by_name feature_name t.active_id_to_feature) @
+    (q_find_all_by_name feature_name t.inactive_id_to_feature)
+
+let a_find_all_by_name t feature_name =
+  List.map (q_to_a t) (q_find_all_by_name t feature_name)
+
+let a_find_all t = function
+  | `Id feature_id -> [a_find_by_id t feature_id]
+  | `Name feature_name -> a_find_all_by_name t feature_name
+
+let num_observations { num_observations } =
+  num_observations
+
+let num_active { active_id_to_feature } =
+  IntMap.cardinal active_id_to_feature
+
+let num_inactive { inactive_id_to_feature } =
+  IntMap.cardinal inactive_id_to_feature
+
+  

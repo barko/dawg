@@ -231,7 +231,7 @@ and react_acquired t task_id = function
     let y_feature =
       try
         D_feat_map.a_find_by_id feature_map y_feature_id
-      with Dog_io.RW.FeatureIdNotFound _ ->
+      with D_feat_map.FeatureIdNotFound _ ->
         assert false
     in
 
@@ -352,11 +352,15 @@ and sample t learning =
             (* sample half the data that is also in the current fold *)
             learning.fold_set.(index) && value mod 2 = 0
         ) learning.sampler in
+      learning.splitter#update_with_subset subset;
       let learning = { learning with subsets = `S ( subset, `N ) } in
       let t = { t with state = `Learning learning } in
       t, `AckSample
 
     | `LR _ | `S _ ->
+      (* TODO: perhaps relax this, so we can enter at any sample
+         state? this would make it possible to start over if any one of
+         the workers died. *)
       t, `Error "sample: not in N state"
 
 and ascend t learning =
@@ -415,8 +419,8 @@ and descend t learning direction =
 and copy_features t learning list =
   let open Learning in
   let feature_map = List.fold_left (
-    fun t (feature_id, vector) ->
-      D_feat_map.add learning.feature_map feature_id vector `Active
+      fun t (feature_id, vector) ->
+        D_feat_map.add learning.feature_map feature_id vector `Active
     ) learning.feature_map list in
   let learning = { learning with feature_map } in
   let t = { t with state = `Learning learning } in

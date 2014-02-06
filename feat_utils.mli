@@ -22,3 +22,7 @@ val folds_of_feature : n:int -> num_folds:int -> Feat.afeature ->
 
 val i_to_a : (int -> Vec.t) -> Feat.ifeature -> Feat.afeature
 
+type feature_descr = [ `Name of string | `Id of int ]
+val string_of_feature_descr : feature_descr -> string
+
+

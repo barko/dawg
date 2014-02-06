@@ -1,33 +1,20 @@
 (** Friedman's Stochastic Gradient Boosting Trees *)
 
 let pr = Printf.printf
+let sp = Printf.sprintf
 
 let random_seed = [| 9271 ; 12074; 3; 12921; 92; 763 |]
 
 type loss_type = [ `Logistic | `Square ]
 
-type conf = {
-  loss_type : loss_type;
-  dog_file_path : string;
-  num_folds : int;
-  min_convergence_rate : float;
-  initial_learning_rate : float;
-  y : Feat_utils.feature_descr;
-  max_depth : int;
-  convergence_rate_smoother_forgetful_factor : float;
-  deadline : float option;
-  output_file_path : string;
-  excluded_feature_name_regexp_opt : Pcre.regexp option;
-  fold_feature_opt : Feat_utils.feature_descr option;
-  max_trees_opt : int option;
-}
+open Sgbt
 
 type t = {
   (* how many observations are there in the training set? *)
   n : int;
 
   (* what is the map of feature id's to features? *)
-  feature_map : Feat_map.t;
+  feature_map : D_feat_map.t;
 
   (* how do we find best splits? *)
   splitter : Loss.splitter;
@@ -53,7 +40,7 @@ let exceed_max_trees num_iters max_trees_opt =
 
 
 let reset t first_tree =
-  let gamma = t.eval (Feat_map.a_find_by_id t.feature_map) first_tree in
+  let gamma = t.eval (D_feat_map.a_find_by_id t.feature_map) first_tree in
   t.splitter#clear;
   (match t.splitter#boost gamma with
     | `NaN -> assert false
@@ -231,66 +218,56 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
 
   learn_with_fold_rate conf t iteration
 
-let folds_of_feature_name conf sampler feature_map n y_feature_id =
+let folds_of_feature conf sampler feature_map n y_feature_id =
   match conf.fold_feature_opt with
     | None ->
-      (* randomly choose fold assignments *)
-      let folds = Sampler.array (
+      (* we don't have a fold feature; randomly assign folds *)
+      let fold = Sampler.array (
           fun ~index ~value ->
             value mod conf.num_folds
         ) sampler in
-      folds, feature_map
+      fold, feature_map
 
-    | Some fold_feature ->
-
-      match Feat_map.find feature_map fold_feature with
-        | None ->
-          pr "feature %S to be used for fold assignment not found\n%!"
-            (Feat_utils.string_of_feature_descr fold_feature);
-          exit 1
-        | Some i_fold_feature ->
-
-          let fold_feature_id = Feat_utils.id_of_feature i_fold_feature in
-          if fold_feature_id = y_feature_id then (
-            pr "fold feature and target feature must be different\n%!";
+    | Some feature_descr ->
+      let fold_feature =
+        match D_feat_map.a_find_all feature_map feature_descr with
+          | [ feature ] -> feature
+          | [] ->
+            pr "no feature %s\n%!"
+              (Feat_utils.string_of_feature_descr feature_descr);
             exit 1
-          );
+          | _ :: _ :: _ ->
+            pr "more than one feature satisfying %s\n%!"
+              (Feat_utils.string_of_feature_descr feature_descr);
+            exit 1
+      in
 
-          (* fold feature found; use it to construct folds *)
-          let a_fold_feature = Feat_map.i_to_a feature_map i_fold_feature in
-          match Feat_utils.folds_of_feature ~n ~num_folds:conf.num_folds
-                  a_fold_feature with
-            | `TooManyOrdinalFolds cardinality ->
-              pr "the cardinality of ordinal feature %s is %d, which is \
-                  too large relative to the number of folds %d\n%!"
-                (Feat_utils.string_of_feature_descr fold_feature)
-                cardinality conf.num_folds;
-              exit 1
+      let fold_feature_id = Feat_utils.id_of_feature fold_feature in
+      let feature_map = D_feat_map.deactivate feature_map fold_feature_id in
+      let num_observations = D_feat_map.num_observations feature_map in
+      match Feat_utils.folds_of_feature ~n:num_observations
+              ~num_folds:conf.num_folds fold_feature with
+        | `Folds fold ->
+          fold, feature_map
 
-            | `CategoricalCardinalityMismatch cardinality ->
-              pr "the cardinality of the categorical feature %s (%d) must \
-                  equal the number of folds (%d)\n%!"
-                (Feat_utils.string_of_feature_descr fold_feature)
-                cardinality conf.num_folds;
-              exit 1
+        | `TooManyOrdinalFolds cardinality ->
+          pr "the cardinality of ordinal fold feature (%d) is \
+              too large relative to the number of folds (%d)\n%!"
+            cardinality conf.num_folds;
+          exit 1
 
-            | `Folds folds ->
-              (* remove the fold_feature from the [feature_map] *)
-              let fold_feature_id = Feat_utils.id_of_feature
-                  a_fold_feature in
-              let feature_map = Feat_map.remove feature_map
-                  fold_feature_id in
-              folds, feature_map
+        | `CategoricalCardinalityMismatch cardinality ->
+          pr "the cardinality of the categorical fold feature (%d) \
+              must equal the number of folds (%d)\n%!"
+            cardinality conf.num_folds;
+          exit 1
 
 
 let learn conf =
-  let dog_reader = Dog_io.RO.create conf.dog_file_path in
-  let feature_map = Feat_map.create dog_reader in
+  let dog_rw = Dog_io.RW.create conf.dog_file_path None  in
+  let feature_map = D_feat_map.create dog_rw in
 
-  let num_observations =
-    let dog = Dog_io.RO.dog dog_reader in
-    dog.Dog_t.num_observations
-  in
+  let num_observations = Dog_io.RW.num_observations dog_rw in
   let n = num_observations in
 
   assert ( conf.num_folds > 0 );
@@ -301,42 +278,39 @@ let learn conf =
   );
 
   let y_feature =
-    let y_feature_opt = Feat_map.find feature_map conf.y in
-    match y_feature_opt with
-      | None ->
+    let y_features = D_feat_map.a_find_all feature_map conf.y in
+    match y_features with
+      | [] ->
         pr "target %s not found\n%!"
           (Feat_utils.string_of_feature_descr conf.y);
         exit 1
 
-      | Some y_feature ->
-        Feat_map.i_to_a feature_map y_feature
+      | one :: two :: _ ->
+        pr "more than one target feature %s\n%!"
+          (Feat_utils.string_of_feature_descr conf.y);
+        exit 1
+
+      | [ y_feature ]-> y_feature
   in
 
   (* remove target from the feature set *)
-  let feature_map = Feat_map.remove feature_map
+  let feature_map = D_feat_map.deactivate feature_map
       (Feat_utils.id_of_feature y_feature) in
 
   (* remove excluded features, if any *)
-  let feature_map, num_excluded_features =
+  let feature_map =
     match conf.excluded_feature_name_regexp_opt with
-      | None -> feature_map, 0
+      | None -> feature_map
 
       | Some rex ->
-        let num_excluded = ref 0 in
-        let is_excluded feature =
-          match Feat_utils.name_of_feature feature with
+          let is_excluded feature =
+            match Feat_utils.name_of_feature feature with
             | None -> false (* anonymous features cannot be excluded *)
             | Some name ->
-              let is_ex = Pcre.pmatch ~rex name in
-              if is_ex then
-                incr num_excluded;
-              is_ex
+                Pcre.pmatch ~rex name
         in
-        let is_included _ feature =
-          not (is_excluded feature)
-        in
-        let feature_map = Feat_map.filter feature_map is_included in
-        feature_map, !num_excluded
+        let feature_map = D_feat_map.deactivate_if feature_map is_excluded in
+        feature_map
   in
 
   let random_state = Random.State.make random_seed in
@@ -345,11 +319,11 @@ let learn conf =
 
   let folds, feature_map =
     let y_feature_id = Feat_utils.id_of_feature y_feature in
-    folds_of_feature_name conf sampler feature_map n y_feature_id
+    folds_of_feature conf sampler feature_map n y_feature_id
   in
 
-  pr "features: included=%d excluded=%d\n%!"
-    (Feat_map.length feature_map) num_excluded_features;
+  pr "features: active=%d inactive=%d\n%!"
+    (D_feat_map.num_active feature_map) (D_feat_map.num_inactive feature_map);
 
   let splitter : Loss.splitter =
     match conf.loss_type with
@@ -424,3 +398,4 @@ let learn conf =
     close_out ouch
   in
   ()
+
