@@ -322,3 +322,21 @@ let eval evaluator feature_vector =
 
 let positive_category { positive_category } =
   positive_category
+
+let square_feature_id_and_name_list { id_to_feature } =
+  Hashtbl.fold (
+    fun feature_id feature accu ->
+      let feature_id_name =
+        match feature with
+          | `CategoricalFeature cat ->
+            cat.cf.cf_feature_id, cat.cf.cf_feature_name_opt
+
+          | `OrdinalFeature ord ->
+            ord.of_feature_id, ord.of_feature_name_opt
+      in
+      feature_id_name :: accu
+  ) id_to_feature []
+
+let feature_id_and_name_list = function
+  | `Logistic logistic -> square_feature_id_and_name_list logistic.sq
+  | `Square sq -> square_feature_id_and_name_list sq
