@@ -50,3 +50,7 @@ val positive_category : logistic -> string
 
 val invert : logistic -> logistic
 (* invert the polarity of the logistic model *)
+
+val feature_id_and_name_list : evaluator -> (int * string option) list
+(* return the list of feature id-name pairs, one for each of the
+   features upon which the underlying model depends *)
