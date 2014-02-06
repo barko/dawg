@@ -62,12 +62,6 @@ type ('a, 'b) regression_model = {
   trees : ('a, 'b) trees;
 } <ocaml field_prefix="re_">
 
-(* this representation is used in the process of learning *)
-type l_logistic_model   = (int, direction_array) logistic_model
-type l_regression_model = (int, direction_array) regression_model
-type l_trees            = (int, direction_array) trees
-type l_tree             = (int, direction_array) tree
-
 (* this more compact representaiton is used for serializing and
    evaluating models outside of the learner *)
 type c_logistic_model   = (float, direction_rle) logistic_model
