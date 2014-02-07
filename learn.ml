@@ -170,12 +170,11 @@ let learn
   in
 
   (* we only create [LS] so as to generically catch exceptions below *)
-  let module LS = (
-    val
-      match loss_type with
-        | `Logistic -> (module Logistic : Loss.LOSS)
-        | `Square -> (module Square : Loss.LOSS)
-  ) in
+    let fcm = match loss_type with
+      | `Logistic -> (module Logistic : Loss.LOSS)
+      | `Square -> (module Square : Loss.LOSS)
+    in
+    let module LS = (val fcm : Loss.LOSS) in
 
   try
     Learner.learn conf
