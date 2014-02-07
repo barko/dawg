@@ -141,3 +141,14 @@ let abspath file_path =
   else
     file_path
 
+(* Support OCaml 3.12 *)
+module List = struct
+  include List
+
+  let iteri f l =
+    let rec iteri i = function
+      | hd :: tl -> f i hd; iteri (succ i) tl
+      | [] -> ()
+    in iteri 0 l
+end
+

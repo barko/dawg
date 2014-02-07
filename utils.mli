@@ -36,3 +36,7 @@ val iter_range : (int -> unit) -> start:int -> finix:int -> unit
 val abspath : string -> string
   (* returns a non-normalized absolute path *)
 
+module List : sig
+  include module type of List
+  val iteri : (int -> 'a -> unit) -> 'a list -> unit
+end

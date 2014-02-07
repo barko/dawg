@@ -3,6 +3,8 @@ open Csv_io
 open Printf
 open Dog_t
 
+module List = Utils.List
+
 module IntMap = Utils.XMap(Utils.Int)
 
 let index =
@@ -69,7 +71,7 @@ let write_cells_to_file work_dir file_num cells =
       | (j, i, `String value) ->
         TS_b.write_string_cell bobuf (j,  i, value)
   done;
-  Bi_outbuf.flush_output_writer bobuf;
+  Bi_outbuf.flush_channel_writer bobuf;
   close_out ouch
 
 let cell_stream path =

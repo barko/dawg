@@ -62,6 +62,13 @@ FILES[] =
   square
   gen_code
 
+# Disable camlp4 for utils.cmi
+# Reason: camlp4 3.12 does not support `module type of <Module>" syntax
+section
+  OCAMLFINDFLAGS[]=
+  utils.cmo utils.cmi utils.cmx utils.o : utils.ml utils.mli
+
+
 .DEFAULT: \
    $(OCamlProgram dawg , $(FILES) ) \
    $(OCamlProgram t_rlevec , test_rlevec $(FILES) ) \
