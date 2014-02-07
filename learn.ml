@@ -131,12 +131,12 @@ let learn
         exit 1
   in
 
-  let module Learner = (
-    val
-      match loss_type with
-        | `Logistic -> (module LogisticSGBT : Sgbt.SGBT)
-        | `Square -> (module SquareSGBT)
-  ) in
+  let fcm =
+    match loss_type with
+      | `Logistic -> (module LogisticSGBT : Sgbt.SGBT)
+      | `Square -> (module SquareSGBT : Sgbt.SGBT)
+  in
+  let module Learner = (val fcm : Sgbt.SGBT) in
 
   let y =
     match feature_descr_of_args y_name_opt y_id_opt with

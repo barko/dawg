@@ -1,3 +1,14 @@
+(* Support OCaml 3.12 *)
+module List = struct
+  include List
+
+  let iteri f l =
+    let rec iteri i = function
+      | hd :: tl -> f i hd; iteri (succ i) tl
+      | [] -> ()
+    in iteri 0 l
+end
+
 (* evaluate binary classification models over a csv file *)
 
 exception TypeMismatch of (int * Csv_types.value)
