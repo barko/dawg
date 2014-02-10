@@ -2,6 +2,17 @@ type t
 
 open Model_t
 
+(* Support OCaml 3.12 *)
+module List = struct
+  include List
+
+  let iteri f l =
+    let rec iteri i = function
+      | hd :: tl -> f i hd; iteri (succ i) tl
+      | [] -> ()
+    in iteri 0 l
+end
+
 (* evaluate a single tree, using a function [get] to get feature
    values by their id *)
 let rec eval_tree get = function

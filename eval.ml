@@ -1,4 +1,19 @@
+(* Support OCaml 3.12 *)
+module List = struct
+  include List
+
+  let iteri f l =
+    let rec iteri i = function
+      | hd :: tl -> f i hd; iteri (succ i) tl
+      | [] -> ()
+    in iteri 0 l
+end
+
 (* evaluate binary classification models over a csv file *)
+
+(* the reason we do not use module [Eval] eval-libs/ocaml is that we
+   want to do more work here; namely, compute feature importance as we
+   evaluate the model *)
 
 exception TypeMismatch of (int * Csv_types.value)
 
@@ -319,14 +334,29 @@ type categorical_entry = {
 
 (* given a feature id and an observation get the corresponding value
    from the observation *)
-let mk_get features  =
+let mk_get features header =
   let id_to_categorical_entry = Hashtbl.create 10 in
+  let feature_id_to_column_id = Hashtbl.create 10 in
+  let column_id_to_feature_id = Hashtbl.create 10 in
+  let column_name_to_column_id = Hashtbl.create 10 in
+
+  let add_to_id_map ~column_id ~feature_id =
+    Hashtbl.add column_id_to_feature_id column_id feature_id;
+    Hashtbl.add feature_id_to_column_id feature_id column_id
+  in
+
+  List.iteri (
+    fun column_id column_name ->
+      Hashtbl.replace column_name_to_column_id column_name column_id
+  ) header;
+
   List.iter (
     function
       | `CategoricalFeature {
-          cf_feature_id;
+          cf_feature_id = feature_id;
           cf_categories;
-          cf_anonymous_category_index_opt
+          cf_anonymous_category_index_opt;
+          cf_feature_name_opt;
         } ->
         let category_to_index = Hashtbl.create 10 in
 
@@ -351,10 +381,38 @@ let mk_get features  =
           anonymous_category_index_opt = cf_anonymous_category_index_opt;
           category_to_index;
         } in
-        Hashtbl.replace id_to_categorical_entry cf_feature_id entry
+        Hashtbl.replace id_to_categorical_entry feature_id entry;
 
-      | `OrdinalFeature { of_feature_id } ->
-        ()
+        (match cf_feature_name_opt with
+          | Some feature_name -> (
+              try
+                let column_id =
+                  Hashtbl.find column_name_to_column_id feature_name in
+                add_to_id_map ~column_id ~feature_id;
+
+              with Not_found ->
+                pr "categorical feature %S is not present in input file\n%!"
+                  feature_name;
+                exit 1
+            )
+          | None -> ()
+
+        );
+
+      | `OrdinalFeature { of_feature_id = feature_id; of_feature_name_opt } -> (
+          match of_feature_name_opt with
+            | Some feature_name -> (
+                try
+                  let column_id =
+                    Hashtbl.find column_name_to_column_id feature_name in
+                  add_to_id_map ~column_id ~feature_id;
+                with Not_found ->
+                  pr "ordinal feature %S not present in input file\n%!"
+                    feature_name;
+                  exit 1
+              )
+            | None -> ()
+        )
 
   ) features;
 
@@ -379,30 +437,43 @@ let mk_get features  =
         raise (TypeMismatch (feature_id, `String category))
   in
 
-  function
+  let get = function
     | `Dense dense ->
       (* convert to array, for fast random access *)
       let dense = Array.of_list dense in
       let len_dense = Array.length dense in
       fun kind feature_id ->
         assert ( feature_id >= 0 );
-        if feature_id < len_dense then
-          translate_value feature_id dense.(feature_id)
+        let column_id =
+          try
+            Hashtbl.find feature_id_to_column_id feature_id
+          with Not_found ->
+            pr "feature with id %d is anonymous" feature_id;
+            exit 1
+        in
+        assert( column_id >= 0 );
+        if column_id < len_dense then
+          translate_value feature_id dense.(column_id)
         else
           raise (MissingValue feature_id)
 
     | `Sparse (sparse : (int * Csv_types.value) list) ->
       (* convert to hashtable, for faster random access *)
-      let id_to_value = Hashtbl.create 10 in
+      let feature_id_to_value = Hashtbl.create 10 in
       List.iter (
-        fun (feature_id, value) ->
-          Hashtbl.replace id_to_value feature_id value
+        fun (column_id, value) ->
+          try
+            let feature_id = Hashtbl.find column_id_to_feature_id column_id in
+            Hashtbl.replace feature_id_to_value feature_id value
+          with Not_found ->
+            (* don't care about this column *)
+            ()
       ) sparse;
 
       fun kind feature_id ->
         assert ( feature_id >= 0 );
         try
-          let value = Hashtbl.find id_to_value feature_id in
+          let value = Hashtbl.find feature_id_to_value feature_id in
           let tr_value = translate_value feature_id value in
           match tr_value, kind with
             | `Float _, `Ord
@@ -421,7 +492,8 @@ let mk_get features  =
           with Not_found ->
             (* this is an ordinal feature, value is [0] *)
             `Float 0.0
-
+  in
+  get
 
 let normal f =
   let probability = Logistic.probability f in
@@ -523,7 +595,7 @@ let model_eval
         exit 1
   in
 
-  let get = mk_get features in
+  let get = mk_get features header in
 
   let rec loop row_num feature_id_to_importance pch =
     match next_row () with

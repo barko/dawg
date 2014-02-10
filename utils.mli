@@ -44,3 +44,7 @@ val bi_write_to_file : (Bi_outbuf.t -> 'a -> unit) -> string -> 'a -> unit
 val abspath : string -> string
   (* returns a non-normalized absolute path *)
 
+module List : sig
+  include module type of List
+  val iteri : (int -> 'a -> unit) -> 'a list -> unit
+end
