@@ -104,8 +104,7 @@ type to_worker_in_learning = [
   | Sample
 
   | BestSplit
-  (* get the best split among all the features which are elements of
-     the [Best] set *)
+  (* get the best split among all the worker's active features  *)
 
   | Push of push
 
