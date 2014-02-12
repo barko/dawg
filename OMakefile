@@ -39,6 +39,14 @@ proto_t.mli proto_b.mli proto_j.mli proto_t.ml proto_b.ml proto_j.ml: proto.atd
         atdgen -b -open Dog_b $<
         atdgen -j -open Dog_j -j-std $<
 
+D_FILES[] =
+  lP_tcp
+  worker
+  worker_client
+  d_feat_map
+  d_sgbt
+  d_tree
+
 FILES[] =
   utils
   iter_literal
@@ -79,13 +87,8 @@ FILES[] =
   proto_t
   proto_b
   proto_j
-  lP_tcp
   lwt_queue
-  worker
-  d_feat_map
-  worker_client
-  d_sgbt
-  d_tree
+
 
 # Disable camlp4 for utils.cmi
 # Reason: camlp4 3.12 does not support `module type of <Module>" syntax

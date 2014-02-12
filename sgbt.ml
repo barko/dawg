@@ -20,6 +20,7 @@ type conf = {
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
+  shrink_first_tree : bool;
 }
 
 type t = {
@@ -178,8 +179,13 @@ and cut_learning_rate conf t iteration =
   let learning_rate = 0.5 *. iteration.learning_rate in
   pr "reducing learning rate from %f to %f\n"
     iteration.learning_rate learning_rate;
-  let shrunken_first_tree = Tree.shrink learning_rate iteration.first_tree in
-  reset t shrunken_first_tree;
+  let first_tree =
+    if conf.shrink_first_tree then
+      Tree.shrink learning_rate iteration.first_tree
+    else
+      iteration.first_tree
+  in
+  reset t first_tree;
   let new_random_seed = [| Random.int 10_000 |] in
   let iteration = {
     iteration with
@@ -187,15 +193,21 @@ and cut_learning_rate conf t iteration =
       random_state = Random.State.make new_random_seed;
       prev_loss = iteration.first_loss;
       i = 1;
-      trees = [shrunken_first_tree]
+      trees = [first_tree]
   } in
   learn_with_fold_rate conf t iteration
 
 let learn_with_fold conf t fold initial_learning_rate deadline =
   let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
-  let leaf0 = t.splitter#first_tree fold_set in
-  let shrunken_leaf0 = Tree.shrink initial_learning_rate leaf0 in
-  reset t shrunken_leaf0;
+
+  let first_tree = t.splitter#first_tree fold_set in
+  let first_tree_x =
+    if conf.shrink_first_tree then
+      Tree.shrink initial_learning_rate first_tree
+    else
+      first_tree
+  in
+  reset t first_tree_x;
 
   let { Loss.s_wrk; s_val; val_loss = first_val_loss } =
     t.splitter#metrics (Array.get fold_set) in
@@ -221,8 +233,8 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
     fold_set;
     first_loss = first_val_loss;
     prev_loss = first_val_loss;
-    first_tree = leaf0;
-    trees = [shrunken_leaf0];
+    first_tree;
+    trees = [first_tree_x];
     learning_rate = initial_learning_rate;
     convergence_rate_smoother;
     random_state = Random.State.make new_random_seed;

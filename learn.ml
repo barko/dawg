@@ -53,6 +53,7 @@ let learn
     loss_type_s
     max_trees_opt
     binarization_threshold_opt
+    shrink_first_tree
   =
 
   if max_depth < 1 then (
@@ -156,6 +157,7 @@ let learn
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
       max_trees_opt;
+      shrink_first_tree
     }
   in
 
@@ -293,6 +295,12 @@ let commands =
             info ["b";"binarization-threshold"] ~docv:"FLOAT" ~doc)
     in
 
+    let shrink_first_tree =
+      let doc = "whether to shrink the first tree (leaf)" in
+      Arg.( required & opt (some bool) (Some false) &
+            info ["shrink-first-tree"] ~docv:"BOOL" ~doc)
+    in
+
     Term.(pure learn $
             input_file_path $
             y_name $
@@ -309,7 +317,8 @@ let commands =
             excluded_feature_name_regexp $
             loss_type $
             max_trees $
-            binarization_threshold
+            binarization_threshold $
+            shrink_first_tree
          ),
     Term.info "learn" ~doc
   in
