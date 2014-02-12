@@ -314,7 +314,7 @@ let commands =
 
     let shrink_first_tree =
       let doc = "whether to shrink the first tree (leaf)" in
-      Arg.( required & opt (some bool) (Some true) &
+      Arg.( required & opt (some bool) (Some false) &
             info ["shrink-first-tree"] ~docv:"BOOL" ~doc)
     in
 
