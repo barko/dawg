@@ -26,6 +26,35 @@ let directions_of_split s_to_k s_pivot =
     *)
   directions
 
+let timeout = 1000.
+
+let best_split_of_splits best_splits =
+  List.fold_left (
+    fun best_opt (_,_, response) ->
+      let s_opt =
+        match response with
+          | `AckBestSplit s_opt -> s_opt
+          | _ -> assert false
+      in
+      match best_opt, s_opt with
+        | Some (best_loss, best_split), Some (loss, split) ->
+
+          if best_loss < loss then
+            (* still superior *)
+            best_opt
+          else
+            (* new champ *)
+            Some (loss, split)
+
+        | None, Some (loss, split) ->
+          (* first guy's always champ *)
+          Some (loss, split)
+
+        | Some _, None -> best_opt
+        | None, None -> None
+
+  ) None best_splits
+
 let rec terminate (best_split : Proto_t.split) =
   let difference_in_gamma =
     let os =
@@ -58,19 +87,29 @@ let rec terminate (best_split : Proto_t.split) =
     in
     Some node
 
-and make task_id workers depth =
-  lwt () = Worker_client.broadcast workers (`Learning (task_id, `Sample)) in
-  lwt results = Worker_client.timed_incast workers in
+and make task_id max_depth workers depth =
+  let open Worker_client in
+  let request = `Learning (task_id, `Sample) in
+  let is_response_valid = function
+    | `AckSample -> true
+    | _ -> false
+  in
+  lwt result = broad_send_recv workers timeout request is_response_valid in
 
-  m.splitter#update_with_subset in_subset;
-  match best_split_of_features m with
-    | None -> None
+  let request = `Learning (task_id, `BestSplit) in
+  let is_response_valid = function
+    | `AckBestSplit _ -> true
+    | _ -> false
+  in
+  lwt result = broad_send_recv workers timeout request is_response_valid in
 
-    | Some split ->
-      let splitting_feature, loss, split = split in
+  match best_split_of_splits result with
+    | None -> Lwt.return None
 
-      if depth + 1 >= m.max_depth then
-        terminate split
+    | Some (loss, split) ->
+
+      if depth + 1 >= max_depth then
+        Lwt.return (terminate split)
 
       else
         let in_subset_left, in_subset_right =

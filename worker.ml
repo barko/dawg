@@ -336,12 +336,12 @@ and best_split learning =
         D_feat_map.best_split_of_features learning.feature_map
           learning.splitter
       in
-      let split_opt =
+      let loss_split_opt =
         match result with
-          | Some (_,_, split) -> Some split
+          | Some (_, loss, split) -> Some (loss, split)
           | None -> None
       in
-      `AckBestSplit split_opt
+      `AckBestSplit loss_split_opt
 
 and sample t learning =
   let open Learning in
@@ -359,8 +359,9 @@ and sample t learning =
 
     | `LR _ | `S _ ->
       (* TODO: perhaps relax this, so we can enter at any sample
-         state? this would make it possible to start over if any one of
-         the workers died. *)
+         state? this would make it possible to start over if any one
+         of the workers died. or else, we should create a message to
+         clear the subsets to [`N]. *)
       t, `Error "sample: not in N state"
 
 and ascend t learning =

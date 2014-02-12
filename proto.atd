@@ -64,6 +64,8 @@ type split = [
   | CategoricalSplit of categorical_split
 ]
 
+type loss_split_opt = (float * split) option
+
 type push = {
   feature_id : feature_id ;
   split : split
@@ -136,7 +138,7 @@ type to_worker = [
 type from_worker = [
   | Error of string
   | AckId of id
-  | AckBestSplit of split option
+  | AckBestSplit of loss_split_opt
   | AckSample
   | AckAcquire of bool
   | AckConfigure
