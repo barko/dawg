@@ -26,7 +26,9 @@ let err msg line_number =
   printf "line %d: %s\n%!" line_number msg;
   exit 1
 
-let iter_file inch =
+let iter_file positive_label inch =
+  let positive_label = match positive_label with Some x -> x | None -> "1" in
+  let negative_label_ref = ref None in
   let p = ref [] in
   let y = ref [] in
 
@@ -44,10 +46,13 @@ let iter_file inch =
            let p_i = float_of_string p_i_s in
 
            let y_i =
-             match y_i_s with
-               | "1" -> true
-               | "0" -> false
-               | _ -> err (sprintf "expecting 1 or 0") line_number
+             if y_i_s = positive_label then
+               true
+             else
+               match !negative_label_ref with
+                 | None -> negative_label_ref := Some y_i_s; false
+                 | Some x when y_i_s <> x -> err (sprintf "expecting %s" x) line_number
+                 | _ -> false
            in
 
            let loss_i = loss ~y:y_i ~p:p_i in
@@ -135,14 +140,14 @@ let iter_file inch =
     loss
 
 
-let bi_metrics input_file_path_opt =
+let bi_metrics input_file_path_opt positive_label_opt =
   let inch =
     match input_file_path_opt with
       | None -> stdin
       | Some path ->
         open_in path
   in
-  iter_file inch;
+  iter_file positive_label_opt inch;
   close_in inch
 
 open Cmdliner
@@ -158,8 +163,13 @@ let commands =
            info ["i";"input"] ~docv:"PATH" ~doc)
     in
 
-    Term.( pure bi_metrics $ input_file_path ), Term.info "bi-metrics" ~doc
+    let positive_category =
+      let doc = "the positive class label" in
+      Arg.(value & opt (some string) None &
+             info ["p";"positive"] ~docv:"STRING" ~doc)
+    in
+
+    Term.( pure bi_metrics $ input_file_path $ positive_category ), Term.info "bi-metrics" ~doc
   in
 
   [bi_metrics_cmd]
-
