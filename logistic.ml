@@ -1,5 +1,10 @@
 open Proto_t
 
+type binarization_threshold = [
+  | `LTE of float (* positive label is LTE, negative case is GT *)
+  | `GTE of float (* positive label is GTE, negative case is LT *)
+]
+
 let logit ~f ~y =
 
   let f2 = -2.0 *. f in
@@ -81,6 +86,10 @@ let zero_one_to_minus_plus_one = function
   | 0 -> -.1.
   | 1 ->   1.
   | _ -> assert false
+
+let bool_to_minus_plus_one = function
+  | true -> 1.0
+  | false -> -1.0
 
 let y_array_of_cat n cat =
   let open Dog_t in
@@ -220,12 +229,81 @@ let y_array_of_ord n ord =
   );
   y, positive_category, negative_category_opt
 
-let y_array_of_feature y_feature n =
+let y_array_of_binarize_ord binarization_threshold n ord =
+  let open Dog_t in
+  let { o_vector; o_breakpoints; o_cardinality } = ord in
+  let y = Array.create n nan in
+  let map, positive_category, negative_category_opt =
+    match o_breakpoints, binarization_threshold with
+      | `Float breakpoints, `GTE th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> breakpoints.(i) >= th), "GTE", Some "LT"
+      | `Float breakpoints, `LTE th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> breakpoints.(i) >= th), "LTE", Some "GT"
+
+      | `Int breakpoints, `GTE th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> float breakpoints.(i) >= th), "GTE", Some "LT"
+      | `Int breakpoints, `LTE th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> float breakpoints.(i) >= th), "LTE", Some "GT"
+  in
+
+  (match o_vector with
+    | `RLE rle -> (
+        match o_breakpoints with
+          | `Float breakpoints ->
+            Rlevec.iter rle (
+              fun ~index ~length ~value ->
+                let mp_one = bool_to_minus_plus_one (map value) in
+                for i = index to index + length - 1 do
+                  y.(i) <- mp_one
+                done
+            );
+
+          | `Int breakpoints ->
+            Rlevec.iter rle (
+              fun ~index ~length ~value ->
+                let mp_one = bool_to_minus_plus_one (map value) in
+                for i = index to index + length - 1 do
+                  y.(i) <- mp_one
+                done
+            );
+      )
+
+    | `Dense vec -> (
+        let width = Utils.num_bytes o_cardinality in
+        match o_breakpoints with
+          | `Float breakpoints ->
+            Dense.iter ~width vec (
+              fun ~index ~value ->
+                let mp_one = bool_to_minus_plus_one (map value) in
+                y.( index ) <- mp_one
+            );
+
+          | `Int breakpoints ->
+            Dense.iter ~width vec (
+              fun ~index ~value ->
+                let mp_one = bool_to_minus_plus_one (map value) in
+                y.( index ) <- mp_one
+            );
+      )
+  );
+  y, positive_category, negative_category_opt
+
+
+let y_array_of_feature binarization_threshold_opt y_feature n =
   (* convert bools to {-1,+1} *)
   let y, p, n_opt =
     match y_feature with
+      | `Cat _ when binarization_threshold_opt <> None ->
+        raise Loss.WrongTargetType
       | `Cat cat -> y_array_of_cat n cat
-      | `Ord ord -> y_array_of_ord n ord
+      | `Ord ord ->
+        match binarization_threshold_opt with
+          | None -> y_array_of_ord n ord
+          | Some th -> y_array_of_binarize_ord th n ord
   in
   assert (
     try
@@ -269,9 +347,9 @@ let updated_loss ~gamma  ~sum_l ~sum_z ~sum_w =
 
 exception EmptyFold
 
-class splitter y_feature n =
+class splitter binarization_threshold_opt y_feature n =
   let y, positive_category, negative_category_opt =
-    y_array_of_feature y_feature n in
+    y_array_of_feature binarization_threshold_opt y_feature n in
 
   let z = Array.create n 0.0 in
   let w = Array.create n 0.0 in
@@ -733,20 +811,20 @@ class splitter y_feature n =
     method first_tree set : Model_t.l_tree =
       assert (Array.length set = n);
       let n_true = ref 0 in
+      let n_false = ref 0 in
       for i = 0 to n-1 do
         if set.(i) then
           match y.(i) with
             |  1.0 -> incr n_true
-            | -1.0 -> ()
+            | -1.0 -> incr n_false
             | _ -> assert false
       done;
       let n_true = !n_true in
-      let n_false = n - n_true in
+      let n_false = !n_false in
       if n_false = 0 || n_true = 0 then
         raise Loss.BadTargetDistribution
       else
-        let mean_y = (float_of_int (n_true - n_false)) /. (float_of_int n)  in
-        let gamma0 = 0.5 *. (log ((1.0 +. mean_y) /. (1.0 -. mean_y))) in
+        let gamma0 = 0.5 *. (log (float n_true /. float n_false)) in
         `Leaf gamma0
 
     method write_model trees features out_buf =

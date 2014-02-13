@@ -1,4 +1,4 @@
-let pr = Printf.printf
+let pr fmt = Printf.printf (fmt ^^ "\n%!")
 
 let seconds_of_string = function
   | RE (float as number : float ) ( 's' | 'S' ) -> (* seconds *)
@@ -18,7 +18,7 @@ let seconds_of_string = function
 let deadline_of_string str =
   match seconds_of_string str with
     | None ->
-      pr "%S is not a valid time-delta sepcifier\n%!" str;
+      pr "%S is not a valid time-delta sepcifier" str;
       exit 1
 
     | Some delta_seconds ->
@@ -52,27 +52,28 @@ let learn
     excluded_feature_name_regexp
     loss_type_s
     max_trees_opt
-    binarization_threshold_opt
     shrink_first_tree
+    lte_binarization_threshold
+    gte_binarization_threshold
   =
 
   if max_depth < 1 then (
-    pr "max-depth must be greater than 0\n%!";
+    pr "max-depth must be greater than 0";
     exit 1
   );
 
   if 0.0 >= initial_learning_rate || initial_learning_rate > 1.0 then (
-    pr "initial-learning-rate must be in (0,1]\n%!";
+    pr "initial-learning-rate must be in (0,1]";
     exit 1
   );
 
   if min_convergence_rate < 0.0 then (
-    pr "min-convergence-rate must be non-negative\n%!";
+    pr "min-convergence-rate must be non-negative";
     exit 1
   );
 
   if num_folds < 2 then (
-    pr "num-folds must be greater than one\n%!";
+    pr "num-folds must be greater than one";
     exit 1
   );
 
@@ -98,13 +99,13 @@ let learn
   in
 
   if not (Sys.file_exists dog_file_path) then (
-    pr "file %S does not exist!\n%!" dog_file_path;
+    pr "file %S does not exist!" dog_file_path;
     exit 1
   );
 
   let output_dir_name = Filename.dirname output_file_path in
   if not (Sys.file_exists output_dir_name) then (
-    pr "output directory %S does not exist!\n%!" output_dir_name;
+    pr "output directory %S does not exist!" output_dir_name;
     exit 1
   );
 
@@ -114,7 +115,7 @@ let learn
           try
             Some (Pcre.regexp re)
           with Pcre.Error _ ->
-            pr "bad regulalar expression %S\n%!" re;
+            pr "bad regulalar expression %S" re;
             exit 1
         )
       | None -> None
@@ -125,7 +126,7 @@ let learn
       | "logistic"-> `Logistic
       | "square" -> `Square
       | _ ->
-        pr "bad loss type %S\n%!" loss_type_s;
+        pr "bad loss type %S" loss_type_s;
         exit 1
   in
 
@@ -139,6 +140,16 @@ let learn
 
   let fold_feature_opt =
     feature_descr_of_args fold_feature_name_opt fold_feature_id_opt
+  in
+
+  let binarization_threshold_opt =
+    match lte_binarization_threshold, gte_binarization_threshold with
+      | Some _, Some _ ->
+        pr "cannot specify both -gte and -lte binarization";
+        exit 1
+      | Some lte, None -> Some (`LTE lte)
+      | None, Some gte -> Some (`GTE gte)
+      | None, None -> None
   in
 
   let conf =
@@ -157,7 +168,8 @@ let learn
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
       max_trees_opt;
-      shrink_first_tree
+      shrink_first_tree;
+      binarization_threshold_opt;
     }
   in
 
@@ -288,17 +300,24 @@ let commands =
             info ["t";"max-trees"] ~docv:"INT" ~doc)
     in
 
-    let binarization_threshold =
-      let doc = "binarize real targets with this threshold \
-                 (implies loss=\"logistic\")" in
-      Arg.( value & opt (some float) None &
-            info ["b";"binarization-threshold"] ~docv:"FLOAT" ~doc)
-    in
-
     let shrink_first_tree =
       let doc = "whether to shrink the first tree (leaf)" in
       Arg.( required & opt (some bool) (Some false) &
             info ["shrink-first-tree"] ~docv:"BOOL" ~doc)
+    in
+
+    let binarize_lte =
+      let doc = "provide a binariziation threshold to an ordinal prediction \
+                 target.  The generated labels are \"LTE\" and \"GT\"" in
+      Arg.( value & opt (some float) None &
+            info ["L"; "binarization-threshold-lte"] ~docv:"FLOAT" ~doc)
+    in
+
+    let binarize_gte =
+      let doc = "provide a binariziation threshold to an ordinal prediction \
+                 target.  The generated labels are \"GTE\" and \"LT\"" in
+      Arg.( value & opt (some float) None &
+            info ["G"; "binarization-threshold-gte"] ~docv:"FLOAT" ~doc)
     in
 
     Term.(pure learn $
@@ -317,8 +336,9 @@ let commands =
             excluded_feature_name_regexp $
             loss_type $
             max_trees $
-            binarization_threshold $
-            shrink_first_tree
+            shrink_first_tree $
+            binarize_lte $
+            binarize_gte
          ),
     Term.info "learn" ~doc
   in
