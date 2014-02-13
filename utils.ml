@@ -157,7 +157,7 @@ let bi_write_to_file write path v =
   let ouch = open_out path in
   let bouch = Bi_outbuf.create_channel_writer ouch in
   write bouch v;
-  Bi_outbuf.flush_output_writer bouch;
+  Bi_outbuf.flush_channel_writer bouch;
   close_out ouch
 
 (* returns a non-normalized absolute path *)

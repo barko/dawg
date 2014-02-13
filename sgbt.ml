@@ -21,6 +21,7 @@ type conf = {
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   shrink_first_tree : bool;
+  binarization_threshold_opt : Logistic.binarization_threshold option;
 }
 
 type t = {
@@ -366,7 +367,8 @@ let learn conf =
   let splitter : Loss.splitter =
     match conf.loss_type with
       | `Logistic ->
-        new Logistic.splitter y_feature num_observations
+        new Logistic.splitter
+          conf.binarization_threshold_opt y_feature num_observations
       | `Square ->
         new Square.splitter y_feature num_observations
   in
