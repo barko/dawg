@@ -811,20 +811,20 @@ class splitter binarization_threshold_opt y_feature n =
     method first_tree set : Model_t.l_tree =
       assert (Array.length set = n);
       let n_true = ref 0 in
+      let n_false = ref 0 in
       for i = 0 to n-1 do
         if set.(i) then
           match y.(i) with
             |  1.0 -> incr n_true
-            | -1.0 -> ()
+            | -1.0 -> incr n_false
             | _ -> assert false
       done;
       let n_true = !n_true in
-      let n_false = n - n_true in
+      let n_false = !n_false in
       if n_false = 0 || n_true = 0 then
         raise Loss.BadTargetDistribution
       else
-        let mean_y = (float_of_int (n_true - n_false)) /. (float_of_int n)  in
-        let gamma0 = 0.5 *. (log ((1.0 +. mean_y) /. (1.0 -. mean_y))) in
+        let gamma0 = 0.5 *. (log (float n_true /. float n_false)) in
         `Leaf gamma0
 
     method write_model trees features out_buf =
