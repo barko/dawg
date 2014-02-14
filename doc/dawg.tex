@@ -1,0 +1,437 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage[colorlinks]{hyperref}
+
+\newcommand{\vx}[0]{\mathbf{x}}
+
+\author{Mika Illouz}
+\title{EigenDog's \texttt{dawg}}
+
+\begin{document}
+
+\maketitle
+
+EigenDog's implementation of {\bf Gradient Boosting Trees}, called
+\texttt{dawg} follows the mathematical description in Friedman's 1999
+paper \cite{GBM}.
+
+Following Friedman's notation, our training set is represented by
+$(y_i, \vx_i)$ where $i = 1 \ldots n$: We have $n$ records, each
+record $i$ consists of an outcome (aka response) $y_i$ and feature
+vector $\vx_i$.  In the general \texttt{dawg} formulation the objective is to
+minimize the loss function $Q$:
+%
+\begin{equation}
+\label{objective}
+Q = \sum_{i=1}^{n} L(y_i, F(\vx_i))
+\end{equation}
+%
+In this context context, $y \in \{ -1, 1 \}$ and
+%
+\[
+L(y,F) = \log ( 1 + \exp( -2 y F ) )
+\]
+$L$ is know as the {\bf deviance} or {\bf cross-entropy.}  $F$ is the
+object we want to construct.  The probability of classifications are:
+\begin{equation}
+\begin{split}
+p(y =1|\vx) &= \frac{1}{1 + \exp(-2 F(\vx) )} \\
+p(y =-1|\vx) &= 1 - p(y=1|\vx) = \frac{1}{1 + \exp(2 F(\vx) )} \\
+\end{split}
+\end{equation}
+
+Some intuition about function $L(y,F)$:
+first, $\log( 1 + \exp (\bullet) )$ is always positive, since
+$\exp(\bullet) \ge 0$.  When $y=1$ and $F \rightarrow \infty$, the
+quantity $\exp ( -2 y F ) \rightarrow 0$ and $L(y, F) \rightarrow 0$.
+So, to drive $L(y, F)$ closer to zero (which is its floor) when
+$y_i=1$, we want to increase $F$.  Similarly, when $y=-1$, decreasing
+$F \rightarrow -\infty$ drives $L(y, F)$ closer to zero.  In either
+case, increasing the magnitude of $F$ in the same direction as $y$
+reduces $L(y,F)$.  Similarly, when $y$ and $F$ have opposite signs and
+$| F | \rightarrow \infty$ then $L(y,F) \rightarrow \infty$.
+
+In \texttt{dawg}, the function $F(\vx)$ is a sum of $K+1$ decision trees:
+\[
+F(\vx) = \sum_{k=0}^K F_k(\vx)
+\]
+More precisely, each $F_k(\vx)$ is a binary decision trees, so that
+each of its non-leaf nodes has two child trees, called the {\bf left}
+and {\bf right} sub-trees.  A decision tree is a piecewise constant
+function, where a leaf node represents one of the constant pieces, and
+a non-leaf node represent a decision over the value of a single
+feature $\vx^j$.  (Notation: whereas $\vx_i$ is the $i$-th row of the
+training set, $\vx^j$ is the $j$-th feature/column).
+
+The ``boosting'' in \texttt{dawg} refers to the fact that in each iteration $k$,
+a new decision tree is constructed that improves upon the previously
+constructed function defined by the sequence of trees $F_0, \ldots,
+F_{k-1}$.  The essential (and inductive) question in \texttt{dawg} is: having
+constructed these trees, what ought the {\em next} tree be?
+
+\paragraph{Feature Splitting}
+
+To build the next tree, we must partition the population of records
+into two subsets.  To build deeper trees, we must recursively
+partition each subset.  With each recursion, we must answer the
+question: were we to stop recursion here -- and therefore build a pair
+of leaf nodes -- what would be their constant values?  We denote the
+leaf's constant value as $\gamma$, with $\gamma_L$ being the left
+value, and $\gamma_R$ being the right one.  Over a subset of records
+$S$, we want to choose a value for $\gamma$ so that the loss function
+in equation [\ref{objective}] is minimized.  For each record $i$ in
+$S$, $\gamma$ would be added to sum of the all previously constructed
+trees $F_k(\vx_i)$.  So our goal is to find a $\gamma^*$:
+%
+\[
+\gamma^* = \arg \min_\gamma \sum_{i \in S} L
+  \bigg[
+    y_i, \bigg\{ \sum_{k=0}^K F_k(\vx_i) \bigg\} + \gamma
+  \bigg]
+\]
+To simplify the presentation, we'll define $F_i^K \equiv \sum_{k=0}^K
+F_k(\vx_i)$, which is the value of the record $i$ evaluated over the
+sum of all the decision trees constructed thus far:
+%
+\[
+\gamma^* = \arg \min_\gamma \sum_{i \in S} L
+  \bigg[ y_i, F_i^K + \gamma \bigg]
+\]
+%
+Finding the best $\gamma$, $\gamma^*$, is univariate minimization
+problem because $y_i$ and $F_i^K$ are all fixed.  Furthermore, it
+turns out that we don't need the optimal $\gamma^*$, just a decent
+approximation $\hat \gamma \approx \gamma^*$.  In his paper, Friedman
+declares (without giving proof) that this approximation is:
+\[
+\hat \gamma =
+  \frac { \sum_{i \in S} z_i } { \sum_{i \in S} | z_i | ( 2 - | z_i | ) }
+\]
+where
+\[
+z_i \equiv \frac{ 2 y_i } { 1 + \exp [ 2 y_i F_i^K ] }
+\]
+are called the {\em pseudo-response}.
+
+\paragraph{Proof}
+
+The proof is as follows: we model $Q(\gamma)$ using a local quadratic
+approximation defined by the Taylor series expansion.  The textbook
+definition of a Taylor series expansion centered at zero (actually
+known as the Maclaurin series) is:
+\[
+f(x) = f(0) + f'(0)x + f''(0)x^2/2! + \cdots
+\]
+Applying this to $Q(\gamma)$, we have:
+\begin{equation*}
+Q(\gamma) = Q(0) + Q'(0)\gamma + Q''(0)\gamma^2/2! + \cdots \\
+\end{equation*}
+Then dropping the higher-order terms, we have the quadratic
+approximation:
+\begin{equation}
+Q(\gamma) \approx Q(0) + Q'(0)\gamma + Q''(0)\gamma^2/2! \\
+\label{Q-quad}
+\end{equation}
+
+Since we are no longer minimizing $Q(\gamma)$ exactly, but rather an
+approximation of that function, the resulting $\hat \gamma$ will be
+also be an approximation of the true minimizer $\gamma^*$.  The
+minimizer of $Q(\gamma)$ must satisfy $Q'(\hat \gamma)=0$, and, taking
+this first derivative results in the condition $Q'(0) + Q''(0)\hat
+\gamma = 0$ or
+\[
+\hat \gamma = -\frac{ Q'(0) }{ Q''(0) }
+\]
+This approximation might initially seem crude. However, one must view
+this in the context of the broader \texttt{dawg} algorithm, in which each new
+decision tree addresses the shortcomings of the previous ones.
+Therefore, a crude selection of $\gamma$ in one branch of one tree is
+corrected in the tree-building iterations that follow it.  In fact,
+since the \texttt{dawg} model improves with each new tree, we expect the leaf
+values necessary to make further improvements to shrink in magnitude.
+In other words, as $k \rightarrow \infty$, $\gamma \rightarrow 0$.
+
+We now derive expressions for $Q'(0)$ and $Q''(0)$:
+
+\begin{equation*}
+\begin{split}
+Q'(\gamma) &= \frac {\partial Q}{\partial \gamma} \\
+&= \frac{\partial}{\partial \gamma} \sum_{i \in S} L \bigg[ y_i, F_i^K + \gamma \bigg] \\
+&= \frac{\partial}{\partial \gamma} \sum_{i \in S} \log \big( 1 + \exp [ -2 y_i (F_i^K + \gamma) ] \big) \\
+&= \sum_{i \in S} \frac{\partial}{\partial \gamma} \log \big( 1 + \exp [ -2 y_i (F_i^K + \gamma) ] \big) \\
+&= \sum_{i \in S} \big( 1 + \exp [ -2 y_i (F_i^K + \gamma) ] \big)^{-1} \frac{\partial}{\partial \gamma} \big( 1 + \exp [ -2 y_i (F_i^K + \gamma) ] \big) \\
+&= \sum_{i \in S} \big( 1 + \exp [ -2 y_i (F_i^K + \gamma) ] \big)^{-1}  \exp [ -2 y_i (F_i^K + \gamma) ] \big( -2 y_i \big) \\
+&= \sum_{i \in S} \frac{  \big( -2 y_i \big) \exp [ -2 y_i (F_i^K + \gamma) ] } { 1 + \exp [ -2 y_i (F_i^K + \gamma) ] } \\
+&= \sum_{i \in S} \frac{  -2 y_i \exp [ -2 y_i (F_i^K + \gamma) ] } { 1 + \exp [ -2 y_i (F_i^K + \gamma) ] } \times
+   \frac { \exp [ 2 y_i (F_i^K + \gamma) ] } { \exp [ 2 y_i (F_i^K + \gamma) ] } \\
+&= \sum_{i \in S} \frac{ -2 y_i } { \exp [ 2 y_i (F_i^K + \gamma) ] + 1 } \\
+\end{split}
+\end{equation*}
+
+Now the second derivative:
+
+\begin{equation*}
+\begin{split}
+Q''(\gamma) &= \frac {\partial Q'}{\partial \gamma} \\
+&= \frac {\partial}{\partial \gamma} \sum_{i \in S} \frac{ -2 y_i } { \exp [ 2 y_i (F_i^K + \gamma) ] + 1 } \\
+&= \sum_{i \in S} (-2 y_i ) \frac {\partial}{\partial \gamma} \bigg( \exp [ 2 y_i (F_i^K + \gamma) ] + 1 \bigg)^{-1} \\
+&= \sum_{i \in S} (-2 y_i ) (-1) \bigg( \exp [ 2 y_i (F_i^K + \gamma) ] + 1 \bigg)^{-2} \frac {\partial}{\partial \gamma} \bigg( \exp [ 2 y_i (F_i^K + \gamma) ] + 1 \bigg) \\
+&= \sum_{i \in S} (-2 y_i ) (-1) \bigg( \exp [ 2 y_i (F_i^K + \gamma) ] + 1 \bigg)^{-2} \exp [ 2 y_i (F_i^K + \gamma) ] ( 2 y_i ) \\
+&= \sum_{i \in S} \frac{ (2 y_i)^2 } { \bigg( \exp [ 2 y_i (F_i^K + \gamma) ] + 1 \bigg)^2 } \times \exp [ 2 y_i (F_i^K + \gamma) ] \\
+\end{split}
+\end{equation*}
+
+Since we are interested in $Q'(0)$, $Q''(0)$, we now simplify with
+$\gamma=0$:
+\begin{equation*}
+\begin{split}
+Q'(0) &= \sum_{i \in S} \frac{ -2 y_i } { \exp [ 2 y_i F_i^K ] + 1 } = - \sum_{i \in S} \frac{ 2 y_i } { \exp [ 2 y_i F_i^K ] + 1 } \\
+Q''(0) &= \sum_{i \in S} \frac{ (2 y_i)^2 } { \bigg( \exp [ 2 y_i F_i^K ] + 1 \bigg)^2 } \times \exp [ 2 y_i F_i^K ] \\
+\end{split}
+\end{equation*}
+Then, conveniently defining
+\begin{equation*}
+z_i \equiv \frac{ 2 y_i } { 1 + \exp [ 2 y_i F_i^K ] }
+\end{equation*}
+we get
+\begin{equation*}
+\begin{split}
+Q'(0) &= - \sum_{i \in S} z_i \\
+Q''(0) &= \sum_{i \in S} z_i^2 \exp [ 2 y_i F_i^K ] \\
+\end{split}
+\end{equation*}
+Note from the definition of $z_i$ that $2 y_i = z_i ( 1 + \exp [ 2 y_i
+  F_i^K ] )$ and therefore $\exp [ 2 y_i F_i^K ] = 2y_i/z_i - 1 =
+(2y_i - z_i)/z_i$.  So,
+\begin{equation*}
+Q''(0) = \sum_{i \in S} z_i^2 \frac{ 2 y_i - z_i }{ z_i } = \sum_{i \in S} z_i ( 2 y_i - z_i ) = \sum_{i \in S} ( 2 y_i z_i - z_i^2 )
+\end{equation*}
+Also note that
+\begin{equation*}
+y_i z_i = y_i \frac{ 2 y_i } { 1 + \exp [ 2 y_i F_i^K ] } = \frac{ 2 y_i^2 } { 1 + \exp [ 2 y_i F_i^K ] }
+\end{equation*}
+However, since $y_i$ is always either $1$ or $-1$, $y_i^2 = 1$, and so
+$y_i z_i = | z_i |$.  Substituting this into $Q''(0)$, we have
+\begin{equation*}
+Q''(0) = \sum_{i \in S} ( 2 | z_i | - z_i^2 ) = \sum_{i \in S} ( 2 | z_i | - | z_i | ^2 ) = \sum_{i \in S} | z_i | ( 2 - | z_i | )
+\end{equation*}
+Finally, we can confirm Friedman's approximation for the optimal $\gamma$:
+\begin{equation*}
+\hat \gamma
+  = - \frac{ Q'(0) }{ Q''(0) }
+  = - \frac{ - \sum_{i \in S} z_i }{ \sum_{i \in S} | z_i | ( 2 - | z_i | ) }
+  = \frac{ \sum_{i \in S} z_i }{ \sum_{i \in S} | z_i | ( 2 - | z_i | ) }
+\end{equation*}
+
+\paragraph{Optimal Loss}
+
+I'll define $N$ and $D$ denoting numerator and denominator:
+\begin{equation*}
+\begin{split}
+N(S) &= \sum_{i \in S} z_i \\
+D(S) &= \sum_{i \in S} | z_i | ( 2 - | z_i | ) \\
+\end{split}
+\end{equation*}
+and then $\hat \gamma = N(S)/D(S)$.
+
+The non-leaf nodes in the tree we are constructing are labeled with
+the identity of a feature $x^j$ and a rule for deciding whether
+evaluation should proceed to the left or right sub-tree.  For features
+that are ordered, this decision takes the form of $x^j \le \alpha$
+(where $\alpha =$ is also known as the {\bf split}.  A split
+partitions a population of records into two subsets $S_L$ and its
+complement $S_R$.  For each subset, we can compute $\gamma_L$ and
+$gamma_R$ resp., which would reveal the leaf values for a branch of
+the decision tree.  we could also determine what the loss of
+population of records would be under the split:
+\[
+Q(\hat \gamma) = Q_L( \hat \gamma_L) + Q_R( \hat \gamma_R ) =
+\sum_{i \in S_L} L [ y_i, F_i^K + \gamma_L ] +
+\sum_{i \in S_R} L [ y_i, F_i^K + \gamma_R ]
+\]
+A feature with $M$ distinct values has $M-1$ candidate splits.  By
+evaluating $Q(\hat \gamma)$ for each the candidate splits (and
+correspondingly, the partition $S_L$ and $S_R$ that would result from
+the split), we can identify a split associated with the minimum loss
+$Q$.  Similarly, determining the optimum split and corresponding loss
+of each feature in the training set, we can identify the feature
+associated with the minimum loss.  Exhaustively determining $\gamma$
+and the resulting loss for each candidate split and for each feature
+is the key computation in \texttt{dawg}.
+
+Computing $Q(\hat \gamma)$ exactly is expensive; fortunately our local
+quadratic approximation \ref{Q-quad} is already available:
+\begin{equation*}
+\begin{split}
+Q(\hat \gamma) &\approx
+  Q(0) +
+  \hat \gamma ( - N ) +
+  \frac{1}{2} \hat \gamma^2 ( D ) \\
+&= Q(0) + \frac{N}{D} (-N) +   \frac{1}{2} \big( \frac{N}{D} \big)^2 ( D ) \\
+&= Q(0) - \frac{N^2}{D} + \frac{1}{2} \frac{N^2}{D} \\
+&= Q(0) - \frac{1}{2} \frac{N^2}{D}
+\end{split}
+\end{equation*}
+
+
+\paragraph{Ordinal Features}
+
+For an ordered feature, we can efficiently compute $\hat \gamma$ and
+loss $Q(\hat \gamma)$ for all possible splits.  For example, the 11-th
+feature $\vx^{11}$ of a training set consisting of 7 records is
+$\vx^{11} = [5,1000,21,5,1000,5,5]^T$.  $\vx^{11}$ has three distinct
+values $\{5,21,1000\}$, and correspondingly, two possible splits:
+$x^{11} \le 5$ and $x^{11} \le 21$.  We want to determine which of
+these splits would result in lower loss.  Assuming $Q(0)$ is evaluated
+identically for all features, We now need to compute $N_{\{i| x^{11}
+  \le 5\}}$, $N_{\{i| x^{11} \le 21\}}$, $D_{\{i| x^{11} \le 5\}}$,
+$D_{\{i| x^{11} \le 21\}}$.
+
+\paragraph{Deep Trees}
+
+A decision tree consisting of one root node and two leaves is called a
+{\bf stump}.  Typically, we want to grow deeper decision trees, as
+this will better capture interaction-effects among features.  To build
+sub-trees, we simply capture the splitting feature and value and apply
+the same tree-building logic on the partition of records defined by
+the split.  When only terminate the tree with leaves once the depth of
+the tree has reached a user-specified limit.
+
+We must maintain the partition (of partition of ...) over which a best
+split is to be searched.  For trees whose depth is greater than one
+(non-stumps), the ancestor split along with its feature data is
+necessary in order to assign a record to a descendant partition.
+
+\paragraph{Categorical Features}
+
+Categorical features are defined by some finite number of labels.  For
+example, the feature {\em nationality} might have three categories
+(aka class labels) \texttt{French}, \texttt{American}, and
+\texttt{Panamanian}.  The categories of such a feature have no natural
+ordering.  A decision rule for a categorical feature $x^j$ takes the
+form $x^j \in C_L$ where $C_L$ is a subset of the categories of that
+feature.  For example, \texttt{if $x \in$ \{French, American\} go left
+  else if $x \in$ \{Panamanian\} go right else raise NoSuchCategory}.
+In this example, $C_L =$ \texttt{\{French, American\}} and $C_R =$
+\texttt{\{Panamanian\}}.  For a categorical feature with $B$
+categories, there are $2^B - 2$ ways to partition these into two sets.
+A naive approach would be to evaluate every partition, and pick the
+one associated with the smallest loss.  However, for even a modest
+$B$, this can be quite expensive.  Fortunately, a heuristic which
+imposes an order on the categories exists; with this ordering,
+computing $\hat \gamma$'s and associated loss is nearly identical to
+that of an ordinal features.
+
+In the context of non-boosted trees, the idea is use the response $y$
+determine the order -- after all, we want to use the feature to
+discriminate between $y=1$ and $y=-1$.  Stated differently, in an
+ideal partition, the response on one side will be uniformly $1$ and on
+the other uniformly $-1$.
+
+In the context boosted trees, we do not care about the response $y_i
+\in {-1,1}$ but rather the pseudo-response $z_i \in \Re$, because the
+latter reflects that which has not yet been explained by previous
+trees.  Why does Friedman call
+\[
+z_i \equiv \frac{ 2 y_i } { 1 + \exp [ 2 y_i F_i^K ] }
+\]
+the pseudo-response?  First note that $z_i$ is some $y_i$ scaled by
+the positive quantity $2/( 1 + \exp [ 2 y_i F_i^K ] )$.  we stated
+earlier that when $y_i$ and $F_i^K$ have the same sign, then the
+component of the loss $L(y_i,F_i^K)$ due to record $i$ is low (by
+design) and that record is considered to be well explained.  In that
+case, as $|F_i^K| \rightarrow \infty$, $\exp [ 2 y_i F_i^K ]
+\rightarrow \infty$, and $z_i \rightarrow 0$.  Conversely for poorly
+explained records, $y_i$ and $F_i^K$ have opposite signs, $\exp [ 2
+  y_i F_i^K ] \rightarrow 0$ and $z_i \rightarrow 2 y_i$.
+
+By ordering the categories according to the average of $z_i$ in each
+category, that is
+\[
+\frac{1}{\text{card}(S)} N \equiv \frac{1}{\text{card}(S)} \sum_{i \in S} z_i
+\]
+We can find the split among the categories which clusters the
+unexplained responses of each type ${-1,1}$.
+
+\paragraph{Shrinkage and Stochastic Boosting}
+
+In his follow-on paper \cite{SGB}, Friedman improved tree-boosting in
+two ways.  The first idea is to train each tree (produced in a single
+iteration) on a different, random subset of the training set ({\bf
+stochastic}).  The second idea is to shrink the leaf values by some
+scalar $\alpha < 1$.
+
+The stochastic idea is inspired by the common practice in statistics
+of setting aside data for model validation.  Predictive modeling
+algorithms can easily {\bf overfit}, by which we mean that they pay
+too much attention to the records in the training set, and in the
+process degrade their ability to perform well on data that they have
+not seen.  So, using the same set of records for both model assessment
+and development often leads to a very optimistic view of a model's
+performance.  A validation set consisting of records that are hidden
+during model development can provide a more realistic view of the
+model's performance.  In tree boosting, training on a different random
+subset of records is intended to mitigate overfitting.  Experience
+shows that it has the intended effect.
+
+The second idea is to shrink in magnitude the value of each tree (that
+is, replace the $\hat \gamma$'s that are at the leaf of every tree
+with a scaled version, $\alpha \hat \gamma$ where $0 < \alpha < 1$.
+This is inspired by common practice in optimization algorithms, where
+a {\bf step}, intended to bring the algorithm closer to the solution,
+is scaled back.  In \texttt{dawg}, a step is a tree.  The impact of
+scaling each tree with the shrinkage factor $\alpha$ (also known as
+the {\bf learning rate}) is to (a) slow down the algorithm (b) give
+opportunities for a wider set of features to be included in the model,
+resulting in a superior model (c) promote convergence.
+
+It has been shown, both in academic papers, and by applying
+\texttt{dawg} to various data sets, that shrinkage and stochastic
+boosting used in combination leads to higher quality models.  These
+runtime costs are significant, and the code necessary to implement
+these features is more complex.  However, EigenDog's bet is that
+customers will be willing to pay for quality, and that the cost for
+achieving that quality is now reasonable (and declining over time).
+
+The point about convergence deserves some elaboration.  It is possible
+that for some learning rate $\alpha \le 1$ the loss $Q \rightarrow
+\infty$.  This happens typically because $L(y_i, F_i^K) \rightarrow
+\infty$ for some record $i$ which was held out during the last
+iteration $K$.  \texttt{dawg} detects to this situation by restarting
+learning with a rate half the original one.
+
+\paragraph{Algorithm Termination}
+
+Although shrinkage and stochastic boosting reduce the tendency for
+\texttt{dawg} to overfit, they do not eliminate that tendency.  In an
+ideal world without overfitting, \texttt{dawg}'s loss function would
+simply stop decreasing with each iteration $k$, defining a convenient
+termination point.  However, with enough diverse features, it seems
+possible to drive the loss arbitrarily close to zero.  This raises the
+question: for a given learning rate, what is the optimal number of
+trees (iterations) ?  To answer this question, \texttt{dawg} performs
+k-fold cross-validation: it trains internally on $(k-1)$ folds, and
+monitors the loss on the remaining ``validation'' fold.  Once the loss
+on this fold starts increasing, \texttt{dawg} stops learning.
+\texttt{dawg} constructs $k$ such sub-models, and averages them in a
+final model.
+
+During the validation phase, we can speak of several sets of records.
+The training set is the union of the validation set and the working
+set.  In each iteration of the validation phase, the working set is
+randomly partitioned in two.  One partition is used for building a
+tree, and the other partition is unused.  The partition of records
+which are used are further portioned as splits are discovered.
+
+\begin{thebibliography}{5}
+\bibitem{GBM}Friedman, Jerome H.  Greedy Function Approximation: A
+  Gradient Boosting machine, 1999;
+  \url{//http://www-stat.stanford.edu/~jhf/ftp/trebst.pdf}
+\bibitem{SGB}Friedman, Jerome H.  Stochastic Gradient Boosting, 1999;
+  \url{http://www-stat.stanford.edu/~jhf/ftp/stobst.pdf}
+\bibitem{ARFF} \url{http://www.cs.waikato.ac.nz/~ml/weka/arff.html}
+\end{thebibliography}
+
+\end{document}
