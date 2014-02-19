@@ -418,7 +418,8 @@ let learn conf =
     ) trees
   in
 
-  let trees, features = Model_utils.l_to_c feature_map trees in
+  let i_find_by_id = Feat_map.i_find_by_id feature_map in
+  let trees, features = Model_utils.l_to_c i_find_by_id trees in
 
   (* write model file *)
   let () =

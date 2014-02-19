@@ -30,6 +30,13 @@ type t = {
   (* what fold does each observation in the training set belong
      to? *)
   folds : int array;
+
+  (* what is the list of active workers, used to compute best splits
+     over subsets of the features ? *)
+  active_workers : LP_tcp.Client.t list ;
+
+  (* what is the learning tasks unique id ? *)
+  task_id : string;
 }
 
 let exceed_max_trees num_iters max_trees_opt =
@@ -76,28 +83,18 @@ type learning_iteration = {
 }
 
 let rec learn_with_fold_rate conf t iteration =
-  let m = {
-    Tree.max_depth = conf.max_depth;
-    feature_map = t.feature_map;
-    splitter = t.splitter
-  } in
+  (* TODO : rpc Sample *)
 
-  (* draw a random subset of this fold *)
-  Sampler.shuffle t.sampler iteration.random_state;
-  let sub_set = Sampler.array (
-      fun ~index ~value ->
-        (* sample half the data that is also in the current fold *)
-        iteration.fold_set.(index) && value mod 2 = 0
-    ) t.sampler in
-
-  match Tree.make m 0 sub_set with
+  match_lwt D_tree.make t.task_id conf.max_depth t.active_workers 0 with
     | None ->
       print_endline "converged: no more trees";
-      `Converged (iteration.learning_rate, iteration.trees)
+      let r = `Converged (iteration.learning_rate, iteration.trees) in
+      Lwt.return r
 
     | Some tree ->
       let shrunken_tree = Tree.shrink iteration.learning_rate tree in
-      let gamma = t.eval (Feat_map.a_find_by_id t.feature_map) shrunken_tree in
+      let gamma = t.eval (D_feat_map.a_find_by_id t.feature_map) shrunken_tree
+      in
 
       match t.splitter#boost gamma with
         | `NaN -> (
@@ -126,7 +123,8 @@ let rec learn_with_fold_rate conf t iteration =
 
           if has_converged then (
             pr "converged: metrics inidicate continuing is pointless\n";
-            `Converged (iteration.learning_rate, iteration.trees)
+            let r = `Converged (iteration.learning_rate, iteration.trees) in
+            Lwt.return r
           )
           else if val_loss >= 2.0 *. iteration.prev_loss then (
             pr "diverged: loss rose dramatically!\n";
@@ -134,17 +132,20 @@ let rec learn_with_fold_rate conf t iteration =
           )
           else if iteration.timeout () then (
             pr "timeout!\n";
-            `Timeout iteration.trees
+            let r = `Timeout iteration.trees in
+            Lwt.return r
           )
           else if exceed_max_trees iteration.i conf.max_trees_opt then (
             (* convergence, kinda *)
             pr "tree limit constraint met\n";
-            `Converged (iteration.learning_rate, iteration.trees)
+            let r = `Converged (iteration.learning_rate, iteration.trees) in
+            Lwt.return r
           )
           else if convergence_rate_hat < conf.min_convergence_rate then (
             (* convergence! *)
             pr "converged: rate exceeded\n";
-            `Converged (iteration.learning_rate, iteration.trees)
+            let r = `Converged (iteration.learning_rate, iteration.trees) in
+            Lwt.return r
           )
           else
             (* continue learning *)
@@ -328,12 +329,15 @@ let learn conf =
   let splitter : Loss.splitter =
     match conf.loss_type with
       | `Logistic ->
-        new Logistic.splitter y_feature num_observations
+        new Logistic.splitter conf.binarization_threshold_opt y_feature
+          num_observations
+
       | `Square ->
         new Square.splitter y_feature num_observations
   in
 
   let eval = Tree.mk_eval num_observations in
+  let task_id = "UUID-TODO" in
 
   let t = {
     n;
@@ -341,12 +345,14 @@ let learn conf =
     splitter;
     eval;
     sampler;
-    folds
+    folds;
+    task_id;
+    active_workers = []
   } in
 
   let rec loop fold trees_list initial_learning_rate =
     if fold < conf.num_folds then
-      match learn_with_fold conf t fold initial_learning_rate 0.0 with
+      match_lwt learn_with_fold conf t fold initial_learning_rate 0.0 with
 
         | `Converged (effective_learning_rate, trees) ->
           let trees_list = List.rev_append trees trees_list in
@@ -360,16 +366,16 @@ let learn conf =
           (* time's up!  only include [trees] if no other trees were
              previously learned. *)
           match trees_list with
-            | [] -> trees
-            | _ -> trees_list
+            | [] -> Lwt.return trees
+            | _ -> Lwt.return trees_list
 
     else
-      trees_list
+      Lwt.return trees_list
   in
 
   (* combine the model learned for each fold into a mega-model,
      where these sequence of trees are simply averaged (bagged!) *)
-  let trees = loop 0 [] conf.initial_learning_rate in
+  lwt trees = loop 0 [] conf.initial_learning_rate in
   let trees =
     let fold_weight = 1.0 /. (float conf.num_folds) in
     List.rev_map (
@@ -378,7 +384,8 @@ let learn conf =
     ) trees
   in
 
-  let trees, features = Model_utils.l_to_c feature_map trees in
+  let i_find_by_id = D_feat_map.a_find_by_id feature_map in
+  let trees, features = Model_utils.l_to_c i_find_by_id trees in
 
   (* write model file *)
   let () =
@@ -397,5 +404,5 @@ let learn conf =
     (* close channel *)
     close_out ouch
   in
-  ()
+  Lwt.return ()
 

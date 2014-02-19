@@ -44,6 +44,10 @@ let nchoose_fold f threads x0 =
   in
   loop x0 [sleeping_threads] results
 
+let feature_id_of_split = function
+  | `CategoricalSplit ({ Proto_t.os_feature_id }, _)  -> os_feature_id
+  | `OrdinalSplit { Proto_t.os_feature_id } -> os_feature_id
+
 type ba = bool array
 type subset_list = [
   | `S of (ba * subset_list)
@@ -239,7 +243,7 @@ and react_acquired t task_id = function
     try
     let splitter =
       match conf.loss_type with
-        | `Logistic -> new Logistic.splitter y_feature num_observations
+        | `Logistic -> new Logistic.splitter None y_feature num_observations
         | `Square -> new Square.splitter y_feature num_observations
     in
     let sampler = Sampler.create num_observations in
@@ -377,10 +381,11 @@ and ascend t learning =
       t, `Error "ascend: not in LR state"
 
 
-and push t learning {Proto_t.split; feature_id} =
+and push t learning split =
   let open Learning in
   match learning.subsets with
     | `S (subset, _) -> (
+        let feature_id = feature_id_of_split split in
         try
           let splitting_feature = D_feat_map.a_find_by_id learning.feature_map
               feature_id in

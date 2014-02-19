@@ -66,11 +66,6 @@ type split = [
 
 type loss_split_opt = (float * split) option
 
-type push = {
-  feature_id : feature_id ;
-  split : split
-}
-
 type to_worker_in_acquired = [
   | Configure of config
 ]
@@ -106,7 +101,7 @@ type to_worker_in_learning = [
   | BestSplit
   (* get the best split among all the worker's active features  *)
 
-  | Push of push
+  | Push of split
 
   | Ascend
 

@@ -88,7 +88,7 @@ let q_find t feature_id =
     with Not_found ->
       raise (FeatureIdNotFound feature_id)
 
-let map_vector t = function
+let q_to_a_vector t = function
   | `Dense { Dog_io.RW.vector_id } ->
     `Dense {
       Vec.length = t.num_observations;
@@ -103,7 +103,7 @@ let map_vector t = function
       offset = vector_id;
     }
 
-let q_to_a t = function
+let q_to_a_feature t = function
   | `Cat {
       Dog_t.c_feature_id;
       c_feature_name_opt;
@@ -118,7 +118,7 @@ let q_to_a t = function
       c_anonymous_category;
       c_categories;
       c_cardinality;
-      c_vector = map_vector t c_vector;
+      c_vector = q_to_a_vector t c_vector;
     }
 
   | `Ord {
@@ -133,17 +133,17 @@ let q_to_a t = function
       o_feature_name_opt;
       o_cardinality;
       o_breakpoints;
-      o_vector = map_vector t o_vector;
+      o_vector = q_to_a_vector t o_vector;
     }
 
 let a_find_by_id t feature_id =
-  let qfeature = q_find t feature_id in
-  q_to_a t qfeature
+  let q_feature = q_find t feature_id in
+  q_to_a_feature t q_feature
 
 let fold_active t f x0 =
   IntMap.fold (
     fun feature_id feature x ->
-      f (q_to_a t feature) x
+      f (q_to_a_feature t feature) x
   ) t.active_id_to_feature x0
 
 let best_split_of_features t splitter  =
@@ -188,7 +188,7 @@ let q_find_all_by_name t feature_name =
     (q_find_all_by_name feature_name t.inactive_id_to_feature)
 
 let a_find_all_by_name t feature_name =
-  List.map (q_to_a t) (q_find_all_by_name t feature_name)
+  List.map (q_to_a_feature t) (q_find_all_by_name t feature_name)
 
 let a_find_all t = function
   | `Id feature_id -> [a_find_by_id t feature_id]
@@ -203,4 +203,4 @@ let num_active { active_id_to_feature } =
 let num_inactive { inactive_id_to_feature } =
   IntMap.cardinal inactive_id_to_feature
 
-  
+

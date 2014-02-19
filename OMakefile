@@ -46,6 +46,7 @@ D_FILES[] =
   d_feat_map
   d_sgbt
   d_tree
+  lwt_queue
 
 FILES[] =
   utils
@@ -87,7 +88,7 @@ FILES[] =
   proto_t
   proto_b
   proto_j
-  lwt_queue
+  $(D_FILES)
 
 
 # Disable camlp4 for utils.cmi
