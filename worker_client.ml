@@ -2,6 +2,13 @@ open LP_tcp
 
 type t = LP_tcp.Client.t
 
+let string_of_peer peer =
+  let open Unix in
+  match Server.sockaddr_of_peer peer with
+    | ADDR_UNIX s -> "unix:" ^ s
+    | ADDR_INET (inet, port) -> Printf.sprintf "inet:%s:%d"
+      (string_of_inet_addr inet) port
+
 let create host =
   LP_tcp.Client.create host Worker.port
 
@@ -42,42 +49,10 @@ let w_sleep timeout =
   Lwt.return `T
 
 
-type timed_incast_tmo = {
-  ok : (float * LP_tcp.Client.t * Proto_b.from_worker) list;
-  failed : LP_tcp.Client.t list;
-  timed_out : LP_tcp.Client.t list;
-}
-
-let all_ok { failed; timed_out } =
-  match failed, timed_out with
-    | [], [] -> true
-    | _ -> false
-
-
 exception DisconnectedPeer of (LP_tcp.Client.t * Proto_t.to_worker)
 exception TimedOutPeer of (LP_tcp.Client.t * Proto_t.to_worker)
 exception ProtocolError of
     (LP_tcp.Client.t * Proto_t.to_worker * Proto_t.from_worker )
-
-let timed_incast_tmo ts timeout =
-  let ok = ref [] in
-  let failed = ref [] in
-  let timed_out = ref [] in
-
-  let tick = Unix.gettimeofday () in
-  lwt () = Lwt_list.iter_p (
-    fun t ->
-      lwt rs = Lwt.pick [w_recv t tick; w_sleep timeout] in
-      (match rs with
-        | `R (_, None) -> failed := t :: !failed
-        | `R (tock, Some r) -> ok := (tock, t, r) :: !ok
-        | `T -> timed_out := t :: !timed_out
-      );
-
-      Lwt.return ()
-
-  ) ts in
-  Lwt.return { ok = !ok; failed = !failed; timed_out = !timed_out }
 
 let broad_send_recv ts timeout request is_response_valid =
   lwt () = broadcast ts request in
@@ -93,6 +68,27 @@ let broad_send_recv ts timeout request is_response_valid =
               Lwt.return (tock, t, response)
             else
               Lwt.fail (ProtocolError (t, request, response))
+    ) ts
+  in
+  Lwt.return ok
+
+let broad_send_recv_nx ts timeout request is_response_valid =
+  lwt () = broadcast ts request in
+  let tick = Unix.gettimeofday () in
+  lwt ok = Lwt_list.map_p (
+      fun t ->
+        lwt rs = Lwt.pick [w_recv t tick; w_sleep timeout] in
+        lwt rs =
+          match rs with
+            | `R (_, None) -> Lwt.return `E
+            | `T -> Lwt.return `T
+            | `R (tock, Some response) ->
+              if is_response_valid response then
+                Lwt.return (`R (tock, response))
+              else
+                Lwt.fail (ProtocolError (t, request, response))
+        in
+        Lwt.return (t, rs)
     ) ts
   in
   Lwt.return ok

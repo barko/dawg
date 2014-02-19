@@ -339,6 +339,50 @@ let learn conf =
   let eval = Tree.mk_eval num_observations in
   let task_id = "UUID-TODO" in
 
+  lwt active_workers =
+    let open Worker_client in
+    lwt worker = create "localhost" in
+    let workers = [ worker ] in
+
+    let request = `Acquire task_id in
+    let timeout = 10. in
+    let is_response_valid = function
+      | `AckAcquire _ -> true
+      | _ -> false
+    in
+    lwt responses =
+      broad_send_recv_nx workers timeout request is_response_valid in
+
+    (*
+       e := network error
+       t := timeout
+       a := worker available
+       na : worker not available
+    *)
+
+    let e, t, a, na = List.fold_left (
+        fun (e, t, a, na) (worker, response) ->
+          match response with
+            | `E -> worker :: e, t, a, na
+            | `T -> e, worker :: t, a, na
+            | `R (_, `AckAcquire true) -> e, t, worker :: a, na
+            | `R (_, `AckAcquire false) -> e, t, a, worker :: na
+            | `R (_, _) -> assert false
+      ) ([], [], [], []) responses
+    in
+
+    (* TODO: close *)
+    (* TODO: log *)
+
+    (match a with
+      | [] ->
+        print_endline "no workers available!"; exit 1
+      | _ -> ();
+    );
+
+    Lwt.return a
+  in
+
   let t = {
     n;
     feature_map;
@@ -347,7 +391,7 @@ let learn conf =
     sampler;
     folds;
     task_id;
-    active_workers = []
+    active_workers;
   } in
 
   let rec loop fold trees_list initial_learning_rate =

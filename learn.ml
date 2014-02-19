@@ -55,6 +55,7 @@ let learn
     shrink_first_tree
     lte_binarization_threshold
     gte_binarization_threshold
+    distributed
   =
 
   if max_depth < 1 then (
@@ -174,7 +175,10 @@ let learn
   in
 
   try
-    Sgbt.learn conf
+    if distributed then
+      Lwt_unix.run (D_sgbt.learn conf)
+    else
+      Sgbt.learn conf
   with
     | Loss.WrongTargetType ->
       pr "target %s is not binary\n%!"
@@ -320,6 +324,12 @@ let commands =
             info ["G"; "binarization-threshold-gte"] ~docv:"FLOAT" ~doc)
     in
 
+    let distributed =
+      let doc = "distribute computation accross known worker nodes on the \
+                 network" in
+      Arg.( value & flag & info ["z"; "distributed"] ~doc)
+    in
+
     Term.(pure learn $
             input_file_path $
             y_name $
@@ -338,7 +348,8 @@ let commands =
             max_trees $
             shrink_first_tree $
             binarize_lte $
-            binarize_gte
+            binarize_gte $
+            distributed
          ),
     Term.info "learn" ~doc
   in
