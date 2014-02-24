@@ -84,6 +84,8 @@ module Int = struct
 end
 
 
+module IntMap = XMap( Int )
+
 (* [log2 x] returns pair [y, s], where [y + 1] is the highest bit index
    whose of [x] value is 1; and [s], the sum of bits whose
    value is one, up to but excluding the highest bit index.  *)

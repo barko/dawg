@@ -26,8 +26,13 @@ type loss_type = [ Logistic | Square ]
 type config  = {
   task_id : task_id;
   loss_type : loss_type;
+
+  (* meta-data for all features *)
   dog_t : t;
+
+  (* the size of the original dog file *)
   dog_file_size : int;
+
   y_feature : (feature_id * string);
   fold_feature_opt : (feature_id * string) option;
   random_seed : int list <ocaml repr="array">;

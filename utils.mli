@@ -24,6 +24,8 @@ module Int : sig
   val compare : int -> int -> int
 end
 
+module IntMap : module type of XMap( Int )
+
 val width : int -> int
   (* cardinality -> num bits required to represent it *)
 

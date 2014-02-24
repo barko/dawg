@@ -13,8 +13,8 @@ type t = {
   (* how many observations are there in the training set? *)
   n : int;
 
-  (* what is the map of feature id's to features? *)
-  feature_map : D_feat_map.t;
+  (* how do we read features from a file? *)
+  dog_rw : Dog_io.RW.t;
 
   (* how do we find best splits? *)
   splitter : Loss.splitter;
@@ -47,7 +47,13 @@ let exceed_max_trees num_iters max_trees_opt =
 
 
 let reset t first_tree =
-  let gamma = t.eval (D_feat_map.a_find_by_id t.feature_map) first_tree in
+  let gamma = t.eval (
+      fun feature_id ->
+        let open Dog_io.RW in
+        let q_feature = Utils.IntMap.find feature_id
+            t.dog_rw.feature_id_to_feature in
+        q_to_a_feature t.dog_rw q_feature
+    ) first_tree in
   t.splitter#clear;
   (match t.splitter#boost gamma with
     | `NaN -> assert false
@@ -93,8 +99,7 @@ let rec learn_with_fold_rate conf t iteration =
 
     | Some tree ->
       let shrunken_tree = Tree.shrink iteration.learning_rate tree in
-      let gamma = t.eval (D_feat_map.a_find_by_id t.feature_map) shrunken_tree
-      in
+      let gamma = t.eval (Dog_io.RW.a_find t.dog_rw) shrunken_tree in
 
       match t.splitter#boost gamma with
         | `NaN -> (
@@ -219,7 +224,31 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
 
   learn_with_fold_rate conf t iteration
 
-let folds_of_feature conf sampler feature_map n y_feature_id =
+let find_all dog_rw =
+  let open Dog_io.RW in
+  function
+    | `Id feature_id -> (
+        try
+          let feature = find dog_rw feature_id in
+          [feature]
+        with FeatureIdNotFound _ ->
+          []
+      )
+
+    | `Name feature_name ->
+      Utils.IntMap.fold (
+        fun _ feature features ->
+          match Feat_utils.name_of_feature feature with
+            | Some fn ->
+              if fn = feature_name then
+                feature :: features
+              else
+                features
+            | None -> features
+      ) dog_rw.feature_id_to_feature []
+
+
+let folds_of_feature conf sampler dog_rw n y_feature_id =
   match conf.fold_feature_opt with
     | None ->
       (* we don't have a fold feature; randomly assign folds *)
@@ -227,11 +256,11 @@ let folds_of_feature conf sampler feature_map n y_feature_id =
           fun ~index ~value ->
             value mod conf.num_folds
         ) sampler in
-      fold, feature_map
+      fold
 
     | Some feature_descr ->
       let fold_feature =
-        match D_feat_map.a_find_all feature_map feature_descr with
+        match find_all dog_rw feature_descr with
           | [ feature ] -> feature
           | [] ->
             pr "no feature %s\n%!"
@@ -243,13 +272,12 @@ let folds_of_feature conf sampler feature_map n y_feature_id =
             exit 1
       in
 
-      let fold_feature_id = Feat_utils.id_of_feature fold_feature in
-      let feature_map = D_feat_map.deactivate feature_map fold_feature_id in
-      let num_observations = D_feat_map.num_observations feature_map in
+      let fold_feature = Dog_io.RW.q_to_a_feature dog_rw fold_feature in
+      let num_observations = dog_rw.Dog_io.RW.num_observations in
       match Feat_utils.folds_of_feature ~n:num_observations
               ~num_folds:conf.num_folds fold_feature with
         | `Folds fold ->
-          fold, feature_map
+          fold
 
         | `TooManyOrdinalFolds cardinality ->
           pr "the cardinality of ordinal fold feature (%d) is \
@@ -266,20 +294,18 @@ let folds_of_feature conf sampler feature_map n y_feature_id =
 
 let learn conf =
   let dog_rw = Dog_io.RW.create conf.dog_file_path None  in
-  let feature_map = D_feat_map.create dog_rw in
 
-  let num_observations = Dog_io.RW.num_observations dog_rw in
-  let n = num_observations in
+  let num_observations = dog_rw.Dog_io.RW.num_observations in
 
   assert ( conf.num_folds > 0 );
-  if conf.num_folds >= n then (
+  if conf.num_folds >= num_observations then (
     pr "number of folds %d must be smaller than the number of observations \
-        %d\n%!" conf.num_folds n;
+        %d\n%!" conf.num_folds num_observations;
     exit 1
   );
 
   let y_feature =
-    let y_features = D_feat_map.a_find_all feature_map conf.y in
+    let y_features = find_all dog_rw conf.y in
     match y_features with
       | [] ->
         pr "target %s not found\n%!"
@@ -294,11 +320,10 @@ let learn conf =
       | [ y_feature ]-> y_feature
   in
 
-  (* remove target from the feature set *)
-  let feature_map = D_feat_map.deactivate feature_map
-      (Feat_utils.id_of_feature y_feature) in
+  let y_feature = Dog_io.RW.q_to_a_feature dog_rw y_feature in
 
   (* remove excluded features, if any *)
+  (*
   let feature_map =
     match conf.excluded_feature_name_regexp_opt with
       | None -> feature_map
@@ -314,17 +339,19 @@ let learn conf =
         feature_map
   in
 
-  let random_state = Random.State.make random_seed in
-  let sampler = Sampler.create n in
-  Sampler.shuffle sampler random_state;
-
-  let folds, feature_map =
-    let y_feature_id = Feat_utils.id_of_feature y_feature in
-    folds_of_feature conf sampler feature_map n y_feature_id
-  in
-
   pr "features: active=%d inactive=%d\n%!"
     (D_feat_map.num_active feature_map) (D_feat_map.num_inactive feature_map);
+
+  *)
+
+  let random_state = Random.State.make random_seed in
+  let sampler = Sampler.create num_observations in
+  Sampler.shuffle sampler random_state;
+
+  let folds =
+    let y_feature_id = Feat_utils.id_of_feature y_feature in
+    folds_of_feature conf sampler dog_rw num_observations y_feature_id
+  in
 
   let splitter : Loss.splitter =
     match conf.loss_type with
@@ -384,8 +411,8 @@ let learn conf =
   in
 
   let t = {
-    n;
-    feature_map;
+    n = num_observations;
+    dog_rw;
     splitter;
     eval;
     sampler;
@@ -428,7 +455,7 @@ let learn conf =
     ) trees
   in
 
-  let i_find_by_id = D_feat_map.a_find_by_id feature_map in
+  let i_find_by_id = Dog_io.RW.a_find dog_rw in
   let trees, features = Model_utils.l_to_c i_find_by_id trees in
 
   (* write model file *)

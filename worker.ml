@@ -64,7 +64,9 @@ module Configured = struct
     y_feature_id : Proto_t.feature_id;
     fold_feature_id_opt : Proto_t.feature_id option;
     splitter : Loss.splitter;
-    feature_map : D_feat_map.t;
+    dog_rw : Dog_io.RW.t;
+    feature_map : Feat.afeature Utils.IntMap.t;
+    features : Feat.afeature list; (* features over which to compute best split *)
     sampler : Sampler.t;
     fold : int array;
     eval : eval;
@@ -78,7 +80,9 @@ module Learning = struct
     y_feature_id : Proto_t.feature_id;
     fold_feature_id_opt : Proto_t.feature_id option;
     splitter : Loss.splitter;
-    feature_map : D_feat_map.t;
+    dog_rw : Dog_io.RW.t;
+    feature_map : Feat.afeature Utils.IntMap.t;
+    features : Feat.afeature list; (* features over which to compute best split *)
     sampler : Sampler.t;
     fold : int array;
     eval : eval;
@@ -116,6 +120,29 @@ type t = {
   state : state;
 }
 
+
+let best_split_of_features splitter features =
+  List.fold_left (
+    fun best_opt feature ->
+      let s_opt = splitter#best_split feature in
+      match best_opt, s_opt with
+        | Some (_, best_loss, best_split), Some (loss, split) ->
+
+          if best_loss < loss then
+            (* still superior *)
+            best_opt
+          else
+            (* new champ *)
+            Some (feature, loss, split)
+
+        | None, Some (loss, split) ->
+          (* first guy's always champ *)
+          Some (feature, loss, split)
+
+        | Some _, None -> best_opt
+        | None, None -> None
+
+  ) None features
 
 let rec service t threads =
   lwt t, threads = nchoose_fold react threads t in
@@ -220,103 +247,101 @@ and react_acquired t task_id = function
     let task_home = Filename.concat t.dot_dawg task_id in
     Utils.mkdir_else_exit task_home;
 
-    let dog_ra =
+    let dog_rw =
       let dog_file = Filename.concat task_home "dog" in
       Dog_io.RW.create dog_file (Some (conf.dog_file_size, conf.dog_t))
     in
-    let feature_map = D_feat_map.create dog_ra in
+    let feature_map = Utils.IntMap.empty in
 
     (* add the target feature *)
     let y_feature_id, y_feature_vector = conf.y_feature in
-    let feature_map = D_feat_map.add feature_map y_feature_id
-        y_feature_vector `Inactive in
 
-    (* now extract it *)
-    let y_feature =
-      try
-        D_feat_map.a_find_by_id feature_map y_feature_id
-      with D_feat_map.FeatureIdNotFound _ ->
-        assert false
-    in
-
-    let num_observations = Dog_io.RW.num_observations dog_ra in
     try
-    let splitter =
-      match conf.loss_type with
-        | `Logistic -> new Logistic.splitter None y_feature num_observations
-        | `Square -> new Square.splitter y_feature num_observations
-    in
-    let sampler = Sampler.create num_observations in
-    let eval = Tree.mk_eval num_observations in
-    let random_state = Random.State.make conf.random_seed in
-    Sampler.shuffle sampler random_state;
 
-    match conf.fold_feature_opt with
-      | None ->
-        (* we don't have a fold feature; randomly assign folds *)
-        let fold = Sampler.array (
-            fun ~index ~value ->
-              value mod conf.num_folds
-          ) sampler in
+      let y_feature = Dog_io.RW.find dog_rw y_feature_id in
+      let () = Dog_io.RW.write dog_rw y_feature_id y_feature_vector in
 
-        let configured = Configured.({
-            task_id;
-            y_feature_id;
-            fold_feature_id_opt = None;
-            feature_map;
-            sampler;
-            splitter;
-            fold;
-            eval;
-            num_observations;
-          }) in
-        { t with state = `Configured configured }, `AckConfigure
+      let y_feature = Dog_io.RW.q_to_a_feature dog_rw y_feature in
+      let num_observations = dog_rw.Dog_io.RW.num_observations in
 
-      | Some (fold_feature_id, fold_feature_vector) ->
-        let feature_map = D_feat_map.add feature_map fold_feature_id
-            fold_feature_vector `Inactive in
+      let splitter =
+        match conf.loss_type with
+          | `Logistic -> new Logistic.splitter None (* TODO *)
+            y_feature num_observations
+          | `Square -> new Square.splitter y_feature num_observations
+      in
+      let sampler = Sampler.create num_observations in
+      let eval = Tree.mk_eval num_observations in
+      let random_state = Random.State.make conf.random_seed in
+      Sampler.shuffle sampler random_state;
 
-        try
-          let fold_feature = D_feat_map.a_find_by_id feature_map
-              fold_feature_id in
-          match Feat_utils.folds_of_feature ~n:num_observations
-                  ~num_folds:conf.num_folds fold_feature with
-            | `Folds fold ->
+      match conf.fold_feature_opt with
+        | None ->
+          (* we don't have a fold feature; randomly assign folds *)
+          let fold = Sampler.array (
+              fun ~index ~value ->
+                value mod conf.num_folds
+            ) sampler in
 
-              let configured =
-                let open Configured in
-                { task_id;
-                  y_feature_id;
-                  fold_feature_id_opt = Some fold_feature_id;
-                  feature_map;
-                  sampler;
-                  splitter;
-                  fold;
-                  eval;
-                  num_observations;
-                }
-              in
-              { t with state = `Configured configured }, `AckConfigure
+          let configured = Configured.({
+              task_id;
+              y_feature_id;
+              fold_feature_id_opt = None;
+              dog_rw;
+              feature_map;
+              features = [];
+              sampler;
+              splitter;
+              fold;
+              eval;
+              num_observations;
+            }) in
+          { t with state = `Configured configured }, `AckConfigure
 
-            | `TooManyOrdinalFolds cardinality ->
-              let err = sp "the cardinality of ordinal fold feature (%d) is \
-                            too large relative to the number of folds (%d)"
-                  cardinality conf.num_folds in
-              t, `Error err
+        | Some (fold_feature_id, fold_feature_vector) -> (
+            let fold_feature = Dog_io.RW.find dog_rw fold_feature_id in
+            Dog_io.RW.write dog_rw fold_feature_id fold_feature_vector;
 
-            | `CategoricalCardinalityMismatch cardinality ->
-              let err = sp "the cardinality of the categorical fold feature (%d) \
-                            must equal the number of folds (%d)"
-                  cardinality conf.num_folds in
-              t, `Error err
+            let fold_feature = Dog_io.RW.q_to_a_feature dog_rw fold_feature in
+            match Feat_utils.folds_of_feature ~n:num_observations
+                    ~num_folds:conf.num_folds fold_feature with
+              | `Folds fold ->
 
-        with Dog_io.RW.FeatureIdNotFound _ ->
-          t, `Error (sp "fold feature %d not found" fold_feature_id)
+                let configured =
+                  let open Configured in
+                  { task_id;
+                    y_feature_id;
+                    fold_feature_id_opt = Some fold_feature_id;
+                    dog_rw;
+                    feature_map;
+                    features = [];
+                    sampler;
+                    splitter;
+                    fold;
+                    eval;
+                    num_observations;
+                  }
+                in
+                { t with state = `Configured configured }, `AckConfigure
 
-    with
-      | Loss.WrongTargetType -> t, `Error "wrong target type"
-      | Loss.BadTargetDistribution -> t, `Error "bad target distribution"
+              | `TooManyOrdinalFolds cardinality ->
+                let err = sp "the cardinality of ordinal fold feature (%d) is \
+                              too large relative to the number of folds (%d)"
+                    cardinality conf.num_folds in
+                t, `Error err
 
+              | `CategoricalCardinalityMismatch cardinality ->
+                let err = sp "the cardinality of the categorical fold feature (%d) \
+                              must equal the number of folds (%d)"
+                    cardinality conf.num_folds in
+                t, `Error err
+            )
+
+      with
+        | Loss.WrongTargetType -> t, `Error "wrong target type"
+        | Loss.BadTargetDistribution -> t, `Error "bad target distribution"
+        | Dog_io.RW.FeatureIdNotFound fid ->
+          t, `Error (sp "feature id %d not found" fid)
 
 and react_learning_msg t learning = function
   | `BestSplit ->
@@ -337,8 +362,7 @@ and best_split learning =
 
     | `S (subset, _) ->
       let result =
-        D_feat_map.best_split_of_features learning.feature_map
-          learning.splitter
+        best_split_of_features learning.splitter learning.features
       in
       let loss_split_opt =
         match result with
@@ -387,8 +411,8 @@ and push t learning split =
     | `S (subset, _) -> (
         let feature_id = feature_id_of_split split in
         try
-          let splitting_feature = D_feat_map.a_find_by_id learning.feature_map
-              feature_id in
+          let splitting_feature = Utils.IntMap.find feature_id
+              learning.feature_map in
           let left, right =
             Tree.partition_observations subset splitting_feature split in
           let subsets = `LR (left, right, learning.subsets) in
@@ -396,7 +420,7 @@ and push t learning split =
           let t = { t with state = `Learning learning } in
           t, `AckPush
 
-        with D_feat_map.FeatureIdNotFound _ ->
+        with Not_found ->
           t, `Error (sp "push: feature %d not found" feature_id)
       )
 
@@ -424,12 +448,10 @@ and descend t learning direction =
 
 and copy_features t learning list =
   let open Learning in
-  let feature_map = List.fold_left (
-      fun t (feature_id, vector) ->
-        D_feat_map.add learning.feature_map feature_id vector `Active
-    ) learning.feature_map list in
-  let learning = { learning with feature_map } in
-  let t = { t with state = `Learning learning } in
+  List.iter (
+    fun (feature_id, vector) ->
+      Dog_io.RW.write learning.dog_rw feature_id vector;
+  ) list;
   t, `AckCopyFeatures
 
 and react_configured t configured = function
@@ -444,8 +466,14 @@ and react_configured t configured = function
     let gamma =
       let leaf0 = configured.splitter#first_tree fold_set in
       let first_tree = Tree.shrink learning_rate leaf0 in
-      configured.eval
-        (D_feat_map.a_find_by_id configured.feature_map) first_tree in
+      configured.eval (
+        fun feature_id ->
+          let open Dog_io.RW in
+          let q_feature= Utils.IntMap.find feature_id
+              configured.dog_rw.feature_id_to_feature in
+          q_to_a_feature configured.dog_rw q_feature
+      ) first_tree in
+
     configured.splitter#clear;
     (match configured.splitter#boost gamma with
       | `NaN -> assert false
@@ -456,7 +484,9 @@ and react_configured t configured = function
       Learning.task_id = configured.task_id;
       y_feature_id = configured.y_feature_id;
       fold_feature_id_opt = configured.fold_feature_id_opt;
+      dog_rw = configured.dog_rw;
       feature_map = configured.feature_map;
+      features = configured.features;
       sampler = configured.sampler;
       splitter = configured.splitter;
       fold = configured.fold;

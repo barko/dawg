@@ -3,42 +3,36 @@ module IntMap = Utils.XMap( Utils.Int )
 
 type t = {
   num_observations : int;
-  dog_ra : Dog_io.RW.t;
+  array : UInt8Array.t;
   active_id_to_feature : Dog_io.RW.qfeature IntMap.t;
   inactive_id_to_feature : Dog_io.RW.qfeature IntMap.t;
 }
 
-let create dog_ra =
-{
-  dog_ra;
+let create dog_rw = {
   active_id_to_feature = IntMap.empty;
   inactive_id_to_feature = IntMap.empty;
-  num_observations = Dog_io.RW.num_observations dog_ra;
+  num_observations = dog_rw.Dog_io.RW.num_observations;
+  array = dog_rw.Dog_io.RW.array;
 }
 
 exception FeatureIdNotFound of Dog_t.feature_id
 
-let add t feature_id vector status =
+let add t feature_id feature status =
   if IntMap.mem feature_id t.active_id_to_feature then
     t (* silently drop *)
   else if IntMap.mem feature_id t.inactive_id_to_feature then
     t (* silently drop *)
   else
-    try
-      let feature = Dog_io.RW.find t.dog_ra feature_id in
-      let () = Dog_io.RW.write t.dog_ra feature_id vector in
-      match status with
-        | `Active ->
-          let active_id_to_feature = IntMap.add feature_id
-              feature t.active_id_to_feature in
-          { t with active_id_to_feature }
+    match status with
+      | `Active ->
+        let active_id_to_feature = IntMap.add feature_id
+            feature t.active_id_to_feature in
+        { t with active_id_to_feature }
 
-        | `Inactive ->
-          let inactive_id_to_feature = IntMap.add feature_id
-              feature t.inactive_id_to_feature in
-          { t with inactive_id_to_feature }
-    with (Dog_io.RW.FeatureIdNotFound _) ->
-      raise (FeatureIdNotFound feature_id)
+      | `Inactive ->
+        let inactive_id_to_feature = IntMap.add feature_id
+            feature t.inactive_id_to_feature in
+        { t with inactive_id_to_feature }
 
 let activate t feature_id =
   try
@@ -79,6 +73,7 @@ let deactivate_if t f =
   { t with active_id_to_feature; inactive_id_to_feature }
 
 
+(*
 let q_find t feature_id =
   try
     IntMap.find feature_id t.active_id_to_feature
@@ -92,14 +87,14 @@ let q_to_a_vector t = function
   | `Dense { Dog_io.RW.vector_id } ->
     `Dense {
       Vec.length = t.num_observations;
-      array = Dog_io.RW.array t.dog_ra;
+      array = t.array;
       offset = vector_id;
     }
 
   | `RLE { Dog_io.RW.vector_id } ->
     `RLE {
       Vec.length = t.num_observations;
-      array = Dog_io.RW.array t.dog_ra;
+      array = t.array;
       offset = vector_id;
     }
 
@@ -140,15 +135,16 @@ let a_find_by_id t feature_id =
   let q_feature = q_find t feature_id in
   q_to_a_feature t q_feature
 
-let fold_active t f x0 =
+let fold_active f features x0 =
   IntMap.fold (
     fun feature_id feature x ->
-      f (q_to_a_feature t feature) x
+      f (Dog_io.RW.q_to_a_feature dog_rw feature) x
   ) t.active_id_to_feature x0
+  *)
 
-let best_split_of_features t splitter  =
-  fold_active t (
-    fun feature best_opt ->
+let best_split_of_features splitter features =
+  List.fold_left (
+    fun best_opt feature ->
       let s_opt = splitter#best_split feature in
       match best_opt, s_opt with
         | Some (_, best_loss, best_split), Some (loss, split) ->
@@ -167,8 +163,9 @@ let best_split_of_features t splitter  =
         | Some _, None -> best_opt
         | None, None -> None
 
-  ) None
+  ) None features
 
+(*
 let q_find_all_by_name feature_name map =
   (* since feature names are not unique, we may have multiple features
      satisfying the query *)
@@ -196,11 +193,10 @@ let a_find_all t = function
 
 let num_observations { num_observations } =
   num_observations
+*)
 
 let num_active { active_id_to_feature } =
   IntMap.cardinal active_id_to_feature
 
 let num_inactive { inactive_id_to_feature } =
   IntMap.cardinal inactive_id_to_feature
-
-

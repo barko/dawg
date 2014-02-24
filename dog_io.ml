@@ -439,10 +439,60 @@ module RW = struct
     with Not_found ->
       raise (FeatureIdNotFound feature_id)
 
-  let array { array } =
-    array
+  let q_to_a_vector t = function
+    | `Dense { vector_id } ->
+      `Dense {
+        Vec.length = t.num_observations;
+        array = t.array;
+        offset = vector_id;
+      }
 
-  let num_observations { num_observations } =
-    num_observations
+    | `RLE { vector_id } ->
+      `RLE {
+        Vec.length = t.num_observations;
+        array = t.array;
+        offset = vector_id;
+      }
+
+  let q_to_a_feature t = function
+    | `Cat {
+        Dog_t.c_feature_id;
+        c_feature_name_opt;
+        c_anonymous_category;
+        c_categories;
+        c_cardinality;
+        c_vector;
+      } ->
+      `Cat {
+        Dog_t.c_feature_id;
+        c_feature_name_opt;
+        c_anonymous_category;
+        c_categories;
+        c_cardinality;
+        c_vector = q_to_a_vector t c_vector;
+      }
+
+    | `Ord {
+        Dog_t.o_feature_id;
+        o_feature_name_opt;
+        o_cardinality;
+        o_breakpoints;
+        o_vector;
+      } ->
+      `Ord {
+        Dog_t.o_feature_id;
+        o_feature_name_opt;
+        o_cardinality;
+        o_breakpoints;
+        o_vector = q_to_a_vector t o_vector;
+      }
+
+  let a_find ra feature_id =
+    try
+      let q = IntMap.find feature_id ra.feature_id_to_feature in
+      q_to_a_feature ra q
+    with Not_found ->
+      raise (FeatureIdNotFound feature_id)
+
 
 end
