@@ -247,7 +247,7 @@ and react_acquired t task_id = function
     let task_home = Filename.concat t.dot_dawg task_id in
     Utils.mkdir_else_exit task_home;
 
-    let dog_rw =
+    let dog_rw, dog_t, dog_file_size =
       let dog_file = Filename.concat task_home "dog" in
       Dog_io.RW.create dog_file (Some (conf.dog_file_size, conf.dog_t))
     in

@@ -248,52 +248,42 @@ let find_all dog_rw =
       ) dog_rw.feature_id_to_feature []
 
 
-let folds_of_feature conf sampler dog_rw n y_feature_id =
-  match conf.fold_feature_opt with
-    | None ->
-      (* we don't have a fold feature; randomly assign folds *)
-      let fold = Sampler.array (
-          fun ~index ~value ->
-            value mod conf.num_folds
-        ) sampler in
-      fold
+let folds_of_feature feature_descr dog_rw ~num_folds =
+  let fold_feature =
+    match find_all dog_rw feature_descr with
+      | [ feature ] -> feature
+      | [] ->
+        pr "no feature %s\n%!"
+          (Feat_utils.string_of_feature_descr feature_descr);
+        exit 1
+      | _ :: _ :: _ ->
+        pr "more than one feature satisfying %s\n%!"
+          (Feat_utils.string_of_feature_descr feature_descr);
+        exit 1
+  in
 
-    | Some feature_descr ->
-      let fold_feature =
-        match find_all dog_rw feature_descr with
-          | [ feature ] -> feature
-          | [] ->
-            pr "no feature %s\n%!"
-              (Feat_utils.string_of_feature_descr feature_descr);
-            exit 1
-          | _ :: _ :: _ ->
-            pr "more than one feature satisfying %s\n%!"
-              (Feat_utils.string_of_feature_descr feature_descr);
-            exit 1
-      in
+  let fold_feature = Dog_io.RW.q_to_a_feature dog_rw fold_feature in
+  let num_observations = dog_rw.Dog_io.RW.num_observations in
+  match Feat_utils.folds_of_feature ~n:num_observations
+          ~num_folds fold_feature with
+    | `Folds fold ->
+      fold, fold_feature
 
-      let fold_feature = Dog_io.RW.q_to_a_feature dog_rw fold_feature in
-      let num_observations = dog_rw.Dog_io.RW.num_observations in
-      match Feat_utils.folds_of_feature ~n:num_observations
-              ~num_folds:conf.num_folds fold_feature with
-        | `Folds fold ->
-          fold
+    | `TooManyOrdinalFolds cardinality ->
+      pr "the cardinality of ordinal fold feature (%d) is \
+          too large relative to the number of folds (%d)\n%!"
+        cardinality num_folds;
+      exit 1
 
-        | `TooManyOrdinalFolds cardinality ->
-          pr "the cardinality of ordinal fold feature (%d) is \
-              too large relative to the number of folds (%d)\n%!"
-            cardinality conf.num_folds;
-          exit 1
-
-        | `CategoricalCardinalityMismatch cardinality ->
-          pr "the cardinality of the categorical fold feature (%d) \
-              must equal the number of folds (%d)\n%!"
-            cardinality conf.num_folds;
-          exit 1
+    | `CategoricalCardinalityMismatch cardinality ->
+      pr "the cardinality of the categorical fold feature (%d) \
+          must equal the number of folds (%d)\n%!"
+        cardinality num_folds;
+      exit 1
 
 
 let learn conf =
-  let dog_rw = Dog_io.RW.create conf.dog_file_path None  in
+  let dog_rw, dog_file_size, dog_t = Dog_io.RW.create conf.dog_file_path None in
 
   let num_observations = dog_rw.Dog_io.RW.num_observations in
 
@@ -321,6 +311,8 @@ let learn conf =
   in
 
   let y_feature = Dog_io.RW.q_to_a_feature dog_rw y_feature in
+  let y_feature_id = Feat_utils.id_of_feature y_feature in
+  let y_feature_blob = Dog_io.RW.read dog_rw y_feature_id in
 
   (* remove excluded features, if any *)
   (*
@@ -348,9 +340,28 @@ let learn conf =
   let sampler = Sampler.create num_observations in
   Sampler.shuffle sampler random_state;
 
-  let folds =
-    let y_feature_id = Feat_utils.id_of_feature y_feature in
-    folds_of_feature conf sampler dog_rw num_observations y_feature_id
+  let folds, fold_feature_opt =
+    match conf.fold_feature_opt with
+      | None ->
+        (* we don't have a fold feature; randomly assign folds *)
+        let fold = Sampler.array (
+            fun ~index ~value ->
+              value mod conf.num_folds
+          ) sampler in
+        fold, None
+
+      | Some feature_descr ->
+        let folds, fold_feature =
+          folds_of_feature feature_descr dog_rw num_observations in
+
+        let fold_feature_id = Feat_utils.id_of_feature fold_feature in
+        if fold_feature_id = y_feature_id then (
+          pr "fold feature and target feature must be different\n%!";
+          exit 1
+        );
+
+        let fold_feature_blob = Dog_io.RW.read dog_rw fold_feature_id in
+        folds, Some (fold_feature_id, fold_feature_blob)
   in
 
   let splitter : Loss.splitter =
@@ -409,6 +420,29 @@ let learn conf =
 
     Lwt.return a
   in
+
+  let d_conf =
+    let open Proto_t in
+    {
+      task_id;
+      loss_type = conf.Sgbt.loss_type;
+      num_folds = conf.Sgbt.num_folds;
+      y_feature = (y_feature_id, y_feature_blob);
+      fold_feature_opt;
+      random_seed;
+      dog_t;
+      dog_file_size;
+    }
+  in
+
+  let request = `Acquired (task_id, `Configure d_conf) in
+  let is_response_valid = function
+    | `AckConfigure -> true
+    | _ -> false
+  in
+  let open Worker_client in
+  let timeout = 1000. in (* TODO *)
+  lwt _ = broad_send_recv active_workers timeout request is_response_valid in
 
   let t = {
     n = num_observations;
@@ -477,3 +511,14 @@ let learn conf =
   in
   Lwt.return ()
 
+let learn conf =
+  try_lwt
+    learn conf
+  with Worker_client.ProtocolError (_, _, from_worker) ->
+    (match from_worker with
+      | `Error msg ->
+        pr "ProtocolError: %s\n%!" msg;
+      | _ ->
+        print_endline "ProtocolError"
+    );
+    exit 1

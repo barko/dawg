@@ -300,15 +300,14 @@ module RW = struct
     (* open the file for reading *)
     let fd = openfile path [O_RDONLY] 0o640 in
 
-    let dog_t_offset =
+    let dog_t_offset, file_size =
 
       (* read the last 8 bytes of the file; it encodes an integer
          which represents the position of the dog metadata (type
          [Dog_t.t]). It also represents size of the preceding (first)
          block of the dog file, which encodes all the bitvectors. *)
       let pos = lseek fd (-8) SEEK_END in
-      ignore pos;
-      (* Printf.printf "pos=%d\n%!" pos; *)
+      let file_size = pos + 8 in
 
       let s8 = String.make 8 '\000' in
       if read fd s8 0 8 <> 8 then
@@ -319,8 +318,7 @@ module RW = struct
       let binb = Bi_inbuf.from_string s8 in
       let dog_t_pos = Bi_io.read_untagged_int64 binb in
 
-      (* Printf.printf "dog pos=%Ld\n%!" dog_t_pos; *)
-      Int64.to_int dog_t_pos
+      Int64.to_int dog_t_pos, file_size
     in
 
     let dog_t =
@@ -343,7 +341,7 @@ module RW = struct
     let feature_id_to_feature =
       feature_id_to_vector_of_features dog_t.features dog_t_offset in
 
-    { array; num_observations; feature_id_to_feature }
+    { array; num_observations; feature_id_to_feature }, file_size, dog_t
 
   let create_w path size dog_t =
     assert (size > 0);
@@ -389,7 +387,7 @@ module RW = struct
   let create path write_opt =
     match write_opt with
       | Some (size, dog_t) -> (* read-write mode *)
-        create_w path size dog_t
+        create_w path size dog_t, size, dog_t
       | None -> (* read-only *)
         create_r path
 

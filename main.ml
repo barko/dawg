@@ -13,7 +13,7 @@ let _ =
       Eval.commands;
       Bi_metrics.commands;
       Gen_code.commands;
-      (* Worker.commands; *)
+      Worker.commands;
     ] in
 
   match Term.eval_choice ~catch:false main_cmd commands with
