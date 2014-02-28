@@ -19,15 +19,19 @@ let meta path key_opt value_opt =
       )
 
     | Some "name", Some value -> (
-        let feature_opt = Feat_map.i_find_by_name_opt feature_set value in
-        match feature_opt with
-          | Some feature ->
-            let feature_s = Dog_j.string_of_ifeature feature in
-            print_endline (Yojson.Safe.prettify feature_s)
-
-          | None ->
+        let features = Feat_map.i_find_by_name feature_set value in
+        match features with
+          | [] ->
             pr "feature with name %s not found\n%!" value;
             exit 1
+
+          | _ ->
+            List.iter (
+              fun feature ->
+                let feature_s = Dog_j.string_of_ifeature feature in
+                print_endline (Yojson.Safe.prettify feature_s)
+            ) features
+
       )
 
     | Some unknown, Some _ ->
@@ -74,14 +78,12 @@ let select path target_feature_id =
   let dog = Dog_io.RO.dog reader in
 
   let map = Feat_map.create reader in
-  let feature_opt = Feat_map.i_find_by_id_opt map target_feature_id in
   let ifeature =
-    match feature_opt with
-      | None ->
-        pr "feature with id %d not found\n%!" target_feature_id;
-        exit 1
-
-      | Some feature -> feature
+    try
+      Feat_map.i_find_by_id map target_feature_id
+    with Not_found ->
+      pr "feature with id %d not found\n%!" target_feature_id;
+      exit 1
   in
 
   let afeature = Feat_map.i_to_a map ifeature in

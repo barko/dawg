@@ -257,12 +257,21 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
     | Some fold_feature ->
 
       match Feat_map.find feature_map fold_feature with
-        | None ->
+        | [] ->
           pr "feature %S to be used for fold assignment not found\n%!"
             (Feat_utils.string_of_feature_descr fold_feature);
           exit 1
-        | Some i_fold_feature ->
 
+        | fold_features ->
+          let num_fold_features = List.length fold_features in
+          if num_fold_features > 1 then
+            pr "warning: there are %d fold features satisfying %s"
+              num_fold_features
+              (Feat_utils.string_of_feature_descr fold_feature);
+
+          (* arbitrarily pick the first fold feature (should there be
+             more than one) *)
+          let i_fold_feature = List.hd fold_features in
           let fold_feature_id = Feat_utils.id_of_feature i_fold_feature in
           if fold_feature_id = y_feature_id then (
             pr "fold feature and target feature must be different\n%!";
@@ -288,11 +297,14 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
               exit 1
 
             | `Folds folds ->
-              (* remove the fold_feature from the [feature_map] *)
-              let fold_feature_id = Feat_utils.id_of_feature
-                  a_fold_feature in
-              let feature_map = Feat_map.remove feature_map
-                  fold_feature_id in
+              (* remove all the fold_features from the [feature_map] *)
+              let feature_map =
+                List.fold_left (
+                  fun feature_map_0 a_fold_feature ->
+                    let fold_feature_id = Feat_utils.id_of_feature
+                        a_fold_feature in
+                    Feat_map.remove feature_map_0 fold_feature_id
+                ) feature_map fold_features  in
               folds, feature_map
 
 
@@ -314,14 +326,19 @@ let learn conf =
   );
 
   let y_feature =
-    let y_feature_opt = Feat_map.find feature_map conf.y in
-    match y_feature_opt with
-      | None ->
+    match Feat_map.find feature_map conf.y with
+      | [] ->
         pr "target %s not found\n%!"
           (Feat_utils.string_of_feature_descr conf.y);
         exit 1
 
-      | Some y_feature ->
+      | (_ :: _ :: _) as y_features ->
+        pr "%d target features satisfying %s found; only one expected\n%!"
+          (List.length y_features)
+          (Feat_utils.string_of_feature_descr conf.y);
+        exit 1
+
+      | [y_feature] ->
         Feat_map.i_to_a feature_map y_feature
   in
 
