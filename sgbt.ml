@@ -265,7 +265,7 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
         | fold_features ->
           let num_fold_features = List.length fold_features in
           if num_fold_features > 1 then
-            pr "warning: there are %d fold features satisfying %s"
+            pr "warning: there are %d fold features satisfying %s\n%!"
               num_fold_features
               (Feat_utils.string_of_feature_descr fold_feature);
 
