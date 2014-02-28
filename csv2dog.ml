@@ -588,9 +588,9 @@ let float_or_int_feature
       let uncapped_width = Utils.width num_distinct_values in
 
       if uncapped_width <= max_width then
-        let breakpoints = List.map fst (sort_fst_ascending hist_list) in
-        (* low cardinality int's are kept as ints *)
+        let breakpoints = List.rev_map fst (sort_fst_descending hist_list) in
 
+        (* low cardinality int's are kept as ints *)
         ordinal_feature int_zero int_of_value
           (fun b -> `Int b) ~j i_values breakpoints ~n feature_id_to_name
 
@@ -599,8 +599,8 @@ let float_or_int_feature
 
         (* cap the width through down-sampling *)
         let num_bins = 1 lsl max_width in
-        let hist = sort_fst_descending hist_list in
-        let hist = List.map (fun (iv, c) -> float_of_int iv, c) hist in
+        let hist = sort_fst_ascending hist_list in
+        let hist = List.rev_map (fun (iv, c) -> float_of_int iv, c) hist in
         let breakpoints = downsample_hist hist num_bins in
         ordinal_feature float_zero float_of_value
           (fun b -> `Float b) ~j i_values breakpoints ~n feature_id_to_name
