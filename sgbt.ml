@@ -20,7 +20,6 @@ type conf = {
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
-  shrink_first_tree : bool;
   binarization_threshold_opt : Logistic.binarization_threshold option;
 }
 
@@ -180,12 +179,7 @@ and cut_learning_rate conf t iteration =
   let learning_rate = 0.5 *. iteration.learning_rate in
   pr "reducing learning rate from %f to %f\n"
     iteration.learning_rate learning_rate;
-  let first_tree =
-    if conf.shrink_first_tree then
-      Tree.shrink learning_rate iteration.first_tree
-    else
-      iteration.first_tree
-  in
+  let first_tree = iteration.first_tree in
   reset t first_tree;
   let new_random_seed = [| Random.int 10_000 |] in
   let iteration = {
@@ -202,13 +196,7 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
   let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
 
   let first_tree = t.splitter#first_tree fold_set in
-  let first_tree_x =
-    if conf.shrink_first_tree then
-      Tree.shrink initial_learning_rate first_tree
-    else
-      first_tree
-  in
-  reset t first_tree_x;
+  reset t first_tree;
 
   let { Loss.s_wrk; s_val; val_loss = first_val_loss } =
     t.splitter#metrics (Array.get fold_set) in
@@ -235,7 +223,7 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
     first_loss = first_val_loss;
     prev_loss = first_val_loss;
     first_tree;
-    trees = [first_tree_x];
+    trees = [first_tree];
     learning_rate = initial_learning_rate;
     convergence_rate_smoother;
     random_state = Random.State.make new_random_seed;

@@ -14,7 +14,6 @@ type conf = {
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
-  shrink_first_tree : bool;
   binarization_threshold_opt : Logistic.binarization_threshold option;
 }
 
