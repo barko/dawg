@@ -29,15 +29,12 @@ exception UnknownCategory of (int * string)
 
 open Model_t
 
-type 'a feature_importance_score = {
-  unweighted : 'a option;
-  leaf_weighted : float option;
-}
+type feature_importance_score = float option
 
-type 'a feature_importance = {
-  unsigned : 'a feature_importance_score;
-  positive : 'a feature_importance_score;
-  negative : 'a feature_importance_score
+type feature_importance = {
+  unsigned : feature_importance_score;
+  positive : feature_importance_score;
+  negative : feature_importance_score
 }
 
 module IntMap = Utils.XMap( Utils.Int )
@@ -90,32 +87,22 @@ let update_importance leaf branch branch_size feature_id_to_importance =
           try
             IntMap.find feature_id feature_id_to_importance
           with Not_found ->
-            let empty = { unweighted = None; leaf_weighted = None } in
-            { unsigned = empty; positive = empty; negative = empty }
+            { unsigned = None; positive = None; negative = None }
         in
         let unsigned = feature_importance.unsigned in
-        let unsigned = {
-          unweighted = i_incr_opt 1 unsigned.unweighted;
-          leaf_weighted = f_incr_opt score unsigned.leaf_weighted;
-        } in
+        let unsigned = f_incr_opt score unsigned in
         let positive, negative =
           match sign with
             | `Neg ->
               (* update negative *)
               let negative = feature_importance.negative in
-              let negative = {
-                unweighted = i_incr_opt 1 negative.unweighted;
-                leaf_weighted = f_incr_opt score negative.leaf_weighted;
-              } in
+              let negative = f_incr_opt score negative in
               feature_importance.positive, negative
 
             | `Pos ->
               (* update negative *)
               let positive = feature_importance.positive in
-              let positive = {
-                unweighted = i_incr_opt 1 positive.unweighted;
-                leaf_weighted = f_incr_opt score positive.leaf_weighted;
-              } in
+              let positive = f_incr_opt score positive in
               positive, feature_importance.negative
 
         in
@@ -127,100 +114,35 @@ let update_importance leaf branch branch_size feature_id_to_importance =
 (* for each importance metric, normalize the scores so that the
    highest scoring feature has value 1 *)
 let normalize_feature_importance feature_id_to_importance =
-  let empty = { unweighted = None; leaf_weighted = None } in
-  let sup0 = { unsigned = empty; positive = empty; negative = empty } in
+  let sup0 = { unsigned = None; positive = None; negative = None } in
   let sup = IntMap.fold (
       fun feature_id fi sup ->
 
-        let unsigned = {
-          unweighted = max sup.unsigned.unweighted fi.unsigned.unweighted;
-          leaf_weighted =
-            max sup.unsigned.leaf_weighted fi.unsigned.leaf_weighted;
-        } in
-        let positive = {
-          unweighted = max sup.positive.unweighted fi.positive.unweighted;
-          leaf_weighted =
-            max sup.positive.leaf_weighted fi.positive.leaf_weighted;
-        } in
-        let negative = {
-          unweighted = max sup.negative.unweighted fi.negative.unweighted;
-          leaf_weighted =
-            max sup.negative.leaf_weighted fi.negative.leaf_weighted;
-        } in
-        let sup = { unsigned; positive; negative } in
-        sup
+        let unsigned = max sup.unsigned fi.unsigned in
+        let positive = max sup.positive fi.positive in
+        let negative = max sup.negative fi.negative in
+        { unsigned; positive; negative }
 
     ) feature_id_to_importance sup0 in
-
-  (* convert to unweighted to float *)
-  let sup =
-    let unsigned = {
-      unweighted = i_to_f_opt sup.unsigned.unweighted;
-      leaf_weighted = sup.unsigned.leaf_weighted;
-    } in
-    let positive = {
-      unweighted = i_to_f_opt sup.positive.unweighted;
-      leaf_weighted = sup.positive.leaf_weighted;
-    } in
-    let negative = {
-      unweighted = i_to_f_opt sup.negative.unweighted;
-      leaf_weighted = sup.negative.leaf_weighted
-    } in
-    { unsigned; positive; negative }
-  in
 
   (* now divide each by [sup] *)
   let norm = IntMap.fold (
       fun feature_id fi accu ->
-        let unsigned = {
-          unweighted = (
-            let uu = i_to_f_opt fi.unsigned.unweighted in
-            div_opt uu sup.unsigned.unweighted
-          );
-          leaf_weighted =
-            div_opt fi.unsigned.leaf_weighted sup.unsigned.leaf_weighted;
-
-        } in
-        let positive = {
-          unweighted = (
-            let pu = i_to_f_opt fi.positive.unweighted in
-            div_opt pu sup.positive.unweighted
-          );
-          leaf_weighted =
-            div_opt fi.positive.leaf_weighted sup.positive.leaf_weighted;
-        } in
-        let negative = {
-          unweighted = (
-            let nu = i_to_f_opt fi.negative.unweighted in
-            div_opt nu sup.negative.unweighted
-          );
-          leaf_weighted =
-            div_opt fi.negative.leaf_weighted sup.negative.leaf_weighted;
-        } in
+        let unsigned = div_opt fi.unsigned sup.unsigned in
+        let positive = div_opt fi.positive sup.positive in
+        let negative = div_opt fi.negative sup.negative in
 
         let sum_importance = ref 0.0 in
         let count = ref 0 in
-        (match unsigned.unweighted with
+        (match unsigned with
           | Some x -> sum_importance := !sum_importance +. x; incr count
           | None -> ()
         );
-        (match unsigned.leaf_weighted with
+        (match positive with
           | Some x -> sum_importance := !sum_importance +. x; incr count
           | None -> ()
         );
-        (match positive.unweighted with
-          | Some x -> sum_importance := !sum_importance +. x; incr count
-          | None -> ()
-        );
-        (match positive.leaf_weighted with
-          | Some x -> sum_importance := !sum_importance +. x; incr count
-          | None -> ()
-        );
-        (match negative.unweighted with
-          | Some x -> sum_importance := !sum_importance +. x; incr count
-          | None -> ()
-        );
-        (match negative.leaf_weighted with
+        (match negative with
           | Some x -> sum_importance := !sum_importance +. x; incr count
           | None -> ()
         );
@@ -251,30 +173,23 @@ let string_of_float_opt = function
   | Some f -> sprintf "%.4e" f
 
 let print_feature_importance ch feature_id_to_importance feature_id_to_name =
-  fprintf ch "id,name,average,unsigned_u,unsigned_w,\
-              positive_u,positive_w,negative_u,negative_w\n";
+  fprintf ch "id,name,average,unsigned,positive,negative\n";
 
   List.iter (
     fun (feature_id, average_importance, fi) ->
       assert( in_0_1 average_importance );
-      assert( in_0_1_opt fi.unsigned.unweighted );
-      assert( in_0_1_opt fi.unsigned.leaf_weighted );
-      assert( in_0_1_opt fi.positive.unweighted );
-      assert( in_0_1_opt fi.positive.leaf_weighted );
-      assert( in_0_1_opt fi.negative.unweighted );
-      assert( in_0_1_opt fi.negative.leaf_weighted );
+      assert( in_0_1_opt fi.unsigned );
+      assert( in_0_1_opt fi.positive );
+      assert( in_0_1_opt fi.negative );
 
       let feature_name = IntMap.find feature_id feature_id_to_name in
-      fprintf ch "%d,%s,%.4e,%s,%s,%s,%s,%s,%s\n"
+      fprintf ch "%d,%s,%.4e,%s,%s,%s\n"
         feature_id
         feature_name
         average_importance
-        (string_of_float_opt fi.unsigned.unweighted)
-        (string_of_float_opt fi.unsigned.leaf_weighted)
-        (string_of_float_opt fi.positive.unweighted)
-        (string_of_float_opt fi.positive.leaf_weighted)
-        (string_of_float_opt fi.negative.unweighted)
-        (string_of_float_opt fi.negative.leaf_weighted)
+        (string_of_float_opt fi.unsigned)
+        (string_of_float_opt fi.positive)
+        (string_of_float_opt fi.negative)
 
   ) feature_id_to_importance
 

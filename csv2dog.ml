@@ -445,32 +445,23 @@ let incr hist ?(by=1) k =
 
 
 let downsample_hist =
-  let rec loop n num_bins cum_count breakpoint accu hist =
-    match hist, num_bins with
-      | _ , 0
-      | [], _ -> (
-          (* Printf.printf "last: n=%d cum_count=%d num_bins=%d breakpoint=%f\n"
-            n cum_count num_bins breakpoint; *)
-          List.rev accu
-        )
-      | (value, count) :: rest, _ ->
-        assert (count > 0);
-        (* Printf.printf "n=%d value=%d count=%d cum_count=%d num_bins=%d breakpoint=%f\n"
-           n value count cum_count num_bins breakpoint; *)
-        let cum_count = count + cum_count in
-        if (float cum_count) >= breakpoint then
-          (* the bin size varies, depending on how many bins we've
-             already consumed *)
-          let num_bins = num_bins - 1 in
-          let bin_size = (float (n - cum_count)) /. (float num_bins) in
-          let breakpoint = breakpoint +. bin_size in
-          let accu = value :: accu in
-          loop n num_bins cum_count breakpoint accu rest
-        else
-          loop n num_bins cum_count breakpoint accu rest
+  let open Huf_hist in
+  let rec loop accu num_bins = function
+    | [] -> assert false
+
+    | [{ left; right }, bin_count] ->
+      (* last bin; its [right] is the maximum value *)
+      let accu = right :: left :: accu in
+      List.rev accu, num_bins + 1
+
+    | ({ left; right }, bin_count) :: tail ->
+      loop (left :: accu) (num_bins + 1) tail
   in
-  fun n num_bins hist ->
-    loop n num_bins 0 0. [] hist
+  fun sorted_distinct_value_count_pairs num_bins ->
+    let bins = create sorted_distinct_value_count_pairs (num_bins - 1) in
+    let bins, num_bins = loop [] 0 bins in
+    assert (num_bins > 1);
+    bins
 
 
 (* cast int's to float's; strings are errors *)
@@ -485,84 +476,136 @@ let int_of_value = function
   | `Float _
   | `String _ -> assert false
 
+let float_zero = `Float 0.0
+let int_zero   = `Int   0
+
+(* unbox, and convert to list, so we can sort, and return the list and
+   the total number of distinct values *)
+let unbox_listify_distinct_value_to_count of_value distinct_value_to_count_tbl =
+  Hashtbl.fold (
+    fun value count (accu, num_distinct_values) ->
+      let v = of_value value in
+      ((v, count) :: accu, num_distinct_values + 1)
+  ) distinct_value_to_count_tbl ([], 0)
+
 let ordinal_feature
     zero
     of_value
     to_breakpoints
-    j
+    ~j
+    i_values
+    breakpoints
+    ~n
+    feature_id_to_name
+    =
+  let breakpoints_a = Array.of_list breakpoints in
+  let o_cardinality = Array.length breakpoints_a in
+  let find = Binary_search.find_x breakpoints_a in
+  let i_rank = List.rev_map (
+      fun (i, value) ->
+        let rank = find (of_value value) in
+        i, rank
+    ) i_values in (* [i_values] are in i-reversed order *)
+  let zero_rank = find (of_value zero) in
+  let rank_runs = Rle.encode_sparse n i_rank zero_rank in
+  let o_vector = `RLE rank_runs in
+  let ord = `Ord {
+      o_feature_id = j;
+      o_feature_name_opt = feature_id_to_name j;
+      o_cardinality;
+      o_vector;
+      o_breakpoints = to_breakpoints breakpoints;
+    } in
+  `NonUniform ord
+
+let float_or_int_feature
+    ~j
     kc
     hist
-    n
+    ~n
     i_values
     feature_id_to_name
-    config =
+    ~max_width =
+
   let n_anonymous = n - kc.n_int - kc.n_float in
   assert (n_anonymous >= 0);
-  (* augment the histogram with zero's, assuming this is the anonymous
-     value *)
-  if n_anonymous > 0 then
-    (* we don't want any values with value=0, count=0 in [hist_list] *)
-    incr hist ~by:n_anonymous zero;
 
-  (* if this is a float feature, merge the number of (`Int 0) and
-     (`Float 0.0) *)
   if kc.n_float > 0 then (
     (* this is a float feature *)
-    try
-      let int_zero_count = Hashtbl.find hist (`Int 0) in
-      Hashtbl.remove hist (`Int 0);
-      incr hist ~by:int_zero_count zero
-    with Not_found ->
-      ()
-  );
 
-  (* unbox, and convert to list, so we can sort *)
-  let hist_list, num_distinct_values = Hashtbl.fold (
-      fun value count (accu, num_distinct_values) ->
-        let v = of_value value in
-        ((v, count) :: accu, num_distinct_values + 1)
-    ) hist ([], 0) in
+    (* augment the histogram with zero's, assuming this is the anonymous
+       value *)
+    if n_anonymous > 0 then
+      (* we don't want any values with value=0, count=0 in [hist_list] *)
+      incr hist ~by:n_anonymous float_zero;
 
-  if num_distinct_values = 1 then
-    `Uniform
-  else
-    let uncapped_width = Utils.width num_distinct_values in
-    let breakpoints =
-      if uncapped_width <= config.max_width then
-        List.map fst (sort_fst_ascending hist_list)
+    (* if this is a float feature, merge the number of (`Int 0) and
+       (`Float 0.0) *)
+    (try
+       let int_zero_count = Hashtbl.find hist int_zero in
+       Hashtbl.remove hist int_zero;
+       incr hist ~by:int_zero_count float_zero
+     with Not_found ->
+       ()
+    );
+
+    let hist_list, num_distinct_values = unbox_listify_distinct_value_to_count
+        float_of_value hist in
+
+    if num_distinct_values = 1 then
+      `Uniform
+    else
+      let uncapped_width = Utils.width num_distinct_values in
+      let breakpoints =
+        if uncapped_width <= max_width then
+          List.map fst (sort_fst_ascending hist_list)
+        else
+          (* cap the width through down-sampling *)
+          let num_bins = 1 lsl max_width in
+          let hist = sort_fst_descending hist_list in
+          downsample_hist hist num_bins
+      in
+      ordinal_feature float_zero float_of_value
+        (fun b -> `Float b) ~j i_values breakpoints ~n feature_id_to_name
+
+  )
+  else (
+    (* the value are all ints, but we might cast them to floats if the
+       cardinality execeeds the cap *)
+
+    (* augment the histogram with zero's, assuming this is the anonymous
+       value *)
+    if n_anonymous > 0 then
+      (* we don't want any values with value=0, count=0 in [hist_list] *)
+      incr hist ~by:n_anonymous int_zero;
+
+    let hist_list, num_distinct_values = unbox_listify_distinct_value_to_count
+        int_of_value hist in
+
+    if num_distinct_values = 1 then
+      `Uniform
+    else
+      let uncapped_width = Utils.width num_distinct_values in
+
+      if uncapped_width <= max_width then
+        let breakpoints = List.rev_map fst (sort_fst_descending hist_list) in
+
+        (* low cardinality int's are kept as ints *)
+        ordinal_feature int_zero int_of_value
+          (fun b -> `Int b) ~j i_values breakpoints ~n feature_id_to_name
+
       else
+        (* high-cardinality int features are represented as float features *)
+
         (* cap the width through down-sampling *)
-        let num_bins = 1 lsl config.max_width in
+        let num_bins = 1 lsl max_width in
         let hist = sort_fst_ascending hist_list in
-        downsample_hist n num_bins hist
-    in
-    let breakpoints_a = Array.of_list breakpoints in
-    let o_cardinality = Array.length breakpoints_a in
-    let find = Binary_search.find_x breakpoints_a in
-    let i_rank = List.rev_map (
-        fun (i, value) ->
-          let rank = find (of_value value) in
-          i, rank
-      ) i_values in (* [i_values] are in i-reversed order *)
-    let zero_rank = find (of_value zero) in
-    let rank_runs = Rle.encode_sparse n i_rank zero_rank in
-    let o_vector = `RLE rank_runs in
-    let ord = `Ord {
-        o_feature_id = j;
-        o_feature_name_opt = feature_id_to_name j;
-        o_cardinality;
-        o_vector;
-        o_breakpoints = to_breakpoints breakpoints;
-      } in
-    `NonUniform ord
+        let hist = List.rev_map (fun (iv, c) -> float_of_int iv, c) hist in
+        let breakpoints = downsample_hist hist num_bins in
+        ordinal_feature float_zero float_of_value
+          (fun b -> `Float b) ~j i_values breakpoints ~n feature_id_to_name
+  )
 
-let int_feature j kc hist n i_values =
-  ordinal_feature (`Int 0) int_of_value (fun b -> `Int b)
-    j kc hist n i_values
-
-let float_feature j kc hist n i_values =
-  ordinal_feature (`Float 0.0) float_of_value (fun b -> `Float b)
-    j kc hist n i_values
 
 exception MixedTypeFeature of int (* feature id *)
 
@@ -590,27 +633,27 @@ let write_feature j i_values n dog feature_id_to_name config =
           Dog_io.WO.add_feature dog cat
     else
       raise (MixedTypeFeature j)
-  else if kc.n_float > 0 then
-    let float_feat = float_feature j kc hist n i_values
-        feature_id_to_name config in
-    match float_feat with
+  else if kc.n_float > 0 || kc.n_int > 0 then
+
+    let float_or_int_feat = float_or_int_feature ~j kc hist ~n i_values
+        feature_id_to_name ~max_width:config.max_width in
+    match float_or_int_feat with
       | `Uniform ->
-        Printf.printf "%d: float uniform\n%!" j
+        Printf.printf "%d: numeric uniform\n%!" j
 
-      | `NonUniform ord ->
-        Printf.printf "%d: float\n%!" j;
-        Dog_io.WO.add_feature dog ord
+      | `NonUniform feat -> (
+          match feat with
+            | `Ord ord ->
+              (match ord.o_breakpoints with
+                | `Float _ ->
+                  Printf.printf "%d: float\n%!" j;
+                | `Int _ ->
+                  Printf.printf "%d: int\n%!" j
+              );
+              Dog_io.WO.add_feature dog feat
 
-  else if kc.n_int > 0 then
-    let int_feat = int_feature j kc hist n i_values
-        feature_id_to_name config in
-    match int_feat with
-      | `Uniform ->
-        Printf.printf "%d: int uniform\n%!" j
-
-      | `NonUniform ord ->
-        Printf.printf "%d: int\n%!" j;
-        Dog_io.WO.add_feature dog ord
+            | `Cat _ -> assert false
+        )
 
   else (
     Printf.printf "%d: implicit uniform\n%!" j

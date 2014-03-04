@@ -67,12 +67,6 @@ let i_find_by_id t feature_id =
 let a_find_by_id t feature_id =
   i_to_a t (i_find_by_id t feature_id)
 
-let i_find_by_id_opt t feature_id =
-  try
-    Some (i_find_by_id t feature_id)
-  with Not_found ->
-    None
-
 let remove t feature_id =
   let id_to_feature = IntMap.remove feature_id t.id_to_feature in
   { t with id_to_feature }
@@ -80,8 +74,8 @@ let remove t feature_id =
 let length t =
   IntMap.fold (fun _ _ c -> c + 1) t.id_to_feature 0
 
-let i_find_by_name_opt t feature_name =
-  let features = IntMap.fold (
+let i_find_by_name t feature_name =
+  IntMap.fold (
     fun _ feature accu ->
       match feature with
         | `Ord { o_feature_name_opt = opt }
@@ -93,13 +87,12 @@ let i_find_by_name_opt t feature_name =
               else
                 accu
             | None -> accu
-  ) t.id_to_feature [] in
-  match features with
-    | [] -> None
-    | [ feature ] -> Some feature
-    | _ -> assert false
+  ) t.id_to_feature []
 
 let find t = function
-  | `Name name -> i_find_by_name_opt t name
-  | `Id id -> i_find_by_id_opt t id
-
+  | `Name name -> i_find_by_name t name
+  | `Id id ->
+    try
+      [i_find_by_id t id]
+    with Not_found ->
+      []

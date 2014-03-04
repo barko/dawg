@@ -240,14 +240,14 @@ let y_array_of_binarize_ord binarization_threshold n ord =
         (fun i -> breakpoints.(i) >= th), "GTE", Some "LT"
       | `Float breakpoints, `LTE th ->
         let breakpoints = Array.of_list breakpoints in
-        (fun i -> breakpoints.(i) >= th), "LTE", Some "GT"
+        (fun i -> breakpoints.(i) <= th), "LTE", Some "GT"
 
       | `Int breakpoints, `GTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> float breakpoints.(i) >= th), "GTE", Some "LT"
       | `Int breakpoints, `LTE th ->
         let breakpoints = Array.of_list breakpoints in
-        (fun i -> float breakpoints.(i) >= th), "LTE", Some "GT"
+        (fun i -> float breakpoints.(i) <= th), "LTE", Some "GT"
   in
 
   (match o_vector with

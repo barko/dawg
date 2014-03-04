@@ -52,7 +52,6 @@ let learn
     excluded_feature_name_regexp
     loss_type_s
     max_trees_opt
-    shrink_first_tree
     lte_binarization_threshold
     gte_binarization_threshold
     distributed
@@ -169,7 +168,6 @@ let learn
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
       max_trees_opt;
-      shrink_first_tree;
       binarization_threshold_opt;
     }
   in
@@ -304,12 +302,6 @@ let commands =
             info ["t";"max-trees"] ~docv:"INT" ~doc)
     in
 
-    let shrink_first_tree =
-      let doc = "whether to shrink the first tree (leaf)" in
-      Arg.( required & opt (some bool) (Some false) &
-            info ["shrink-first-tree"] ~docv:"BOOL" ~doc)
-    in
-
     let binarize_lte =
       let doc = "provide a binariziation threshold to an ordinal prediction \
                  target.  The generated labels are \"LTE\" and \"GT\"" in
@@ -346,7 +338,6 @@ let commands =
             excluded_feature_name_regexp $
             loss_type $
             max_trees $
-            shrink_first_tree $
             binarize_lte $
             binarize_gte $
             distributed

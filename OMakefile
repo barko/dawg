@@ -89,6 +89,8 @@ FILES[] =
   proto_t
   proto_b
   proto_j
+  lwt_queue
+  huf_hist
   $(D_FILES)
 
 
@@ -105,6 +107,7 @@ section
    $(OCamlProgram t_sm , test_stream_merge stream_merge heap ) \
    $(OCamlProgram t_rle, test_rle rle utils ) \
    $(OCamlProgram t_xyz, test_xyz ) \
+   $(OCamlProgram t_hh, test_huf_hist huf_hist ) \
    $(OCamlProgram wcli, wcli lwt_queue lP_tcp \
                         proto_b proto_t proto_j \
                         dog_b dog_t dog_j )

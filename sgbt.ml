@@ -20,7 +20,6 @@ type conf = {
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
-  shrink_first_tree : bool;
   binarization_threshold_opt : Logistic.binarization_threshold option;
 }
 
@@ -180,12 +179,7 @@ and cut_learning_rate conf t iteration =
   let learning_rate = 0.5 *. iteration.learning_rate in
   pr "reducing learning rate from %f to %f\n"
     iteration.learning_rate learning_rate;
-  let first_tree =
-    if conf.shrink_first_tree then
-      Tree.shrink learning_rate iteration.first_tree
-    else
-      iteration.first_tree
-  in
+  let first_tree = iteration.first_tree in
   reset t first_tree;
   let new_random_seed = [| Random.int 10_000 |] in
   let iteration = {
@@ -202,13 +196,7 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
   let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
 
   let first_tree = t.splitter#first_tree fold_set in
-  let first_tree_x =
-    if conf.shrink_first_tree then
-      Tree.shrink initial_learning_rate first_tree
-    else
-      first_tree
-  in
-  reset t first_tree_x;
+  reset t first_tree;
 
   let { Loss.s_wrk; s_val; val_loss = first_val_loss } =
     t.splitter#metrics (Array.get fold_set) in
@@ -235,7 +223,7 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
     first_loss = first_val_loss;
     prev_loss = first_val_loss;
     first_tree;
-    trees = [first_tree_x];
+    trees = [first_tree];
     learning_rate = initial_learning_rate;
     convergence_rate_smoother;
     random_state = Random.State.make new_random_seed;
@@ -257,12 +245,21 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
     | Some fold_feature ->
 
       match Feat_map.find feature_map fold_feature with
-        | None ->
+        | [] ->
           pr "feature %S to be used for fold assignment not found\n%!"
             (Feat_utils.string_of_feature_descr fold_feature);
           exit 1
-        | Some i_fold_feature ->
 
+        | fold_features ->
+          let num_fold_features = List.length fold_features in
+          if num_fold_features > 1 then
+            pr "warning: there are %d fold features satisfying %s\n%!"
+              num_fold_features
+              (Feat_utils.string_of_feature_descr fold_feature);
+
+          (* arbitrarily pick the first fold feature (should there be
+             more than one) *)
+          let i_fold_feature = List.hd fold_features in
           let fold_feature_id = Feat_utils.id_of_feature i_fold_feature in
           if fold_feature_id = y_feature_id then (
             pr "fold feature and target feature must be different\n%!";
@@ -288,11 +285,14 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
               exit 1
 
             | `Folds folds ->
-              (* remove the fold_feature from the [feature_map] *)
-              let fold_feature_id = Feat_utils.id_of_feature
-                  a_fold_feature in
-              let feature_map = Feat_map.remove feature_map
-                  fold_feature_id in
+              (* remove all the fold_features from the [feature_map] *)
+              let feature_map =
+                List.fold_left (
+                  fun feature_map_0 a_fold_feature ->
+                    let fold_feature_id = Feat_utils.id_of_feature
+                        a_fold_feature in
+                    Feat_map.remove feature_map_0 fold_feature_id
+                ) feature_map fold_features  in
               folds, feature_map
 
 
@@ -314,14 +314,19 @@ let learn conf =
   );
 
   let y_feature =
-    let y_feature_opt = Feat_map.find feature_map conf.y in
-    match y_feature_opt with
-      | None ->
+    match Feat_map.find feature_map conf.y with
+      | [] ->
         pr "target %s not found\n%!"
           (Feat_utils.string_of_feature_descr conf.y);
         exit 1
 
-      | Some y_feature ->
+      | (_ :: _ :: _) as y_features ->
+        pr "%d target features satisfying %s found; only one expected\n%!"
+          (List.length y_features)
+          (Feat_utils.string_of_feature_descr conf.y);
+        exit 1
+
+      | [y_feature] ->
         Feat_map.i_to_a feature_map y_feature
   in
 
