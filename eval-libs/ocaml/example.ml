@@ -35,9 +35,6 @@ let _ =
     let p = eval e feature_vector in
     pr "probability = %f\n" p
   with
-    | FeatureNotFound key ->
-      pr "feature %s not found\n" (string_of_key key)
-
     | TypeMismatch (key, value) -> (
         match value with
           | `String _ ->

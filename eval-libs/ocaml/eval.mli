@@ -19,10 +19,6 @@ type feature_vector = (feature_key * feature_value) list
    categorical feature that do not have an anonymous category
    (otherwise, a [CategoryMissing _] exception is raised. *)
 
-exception FeatureNotFound of feature_key
-(* raised when a feature was provided in a feature vector which is not
-   required by the model to be evaluated. *)
-
 exception TypeMismatch of (feature_key * feature_value)
 (* raised when the model expects a feature of one type, but a value of
    another type is provided in the feature vector.  The two types are
