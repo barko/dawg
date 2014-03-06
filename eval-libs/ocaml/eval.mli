@@ -32,12 +32,20 @@ exception CategoryNotFound of (feature_key * string)
    set of categories. *)
 
 exception CategoryMissing of feature_key
-(* raised when the feature vector lacks a value for a categorical
-   feature.  Note that [`Float 0.0] is the default value of ordinal
-   features. *)
+(* raised when categorical feature (without an anonymous category)
+   lacks a value for a categorical feature  *)
 
-val eval : evaluator -> feature_vector -> float
-(* evaluate the model using over input [feature_vector] *)
+exception ValueMissing of feature_key
+(* raised with the feature vector lacks a value for a feature.  Note
+   that [`Float 0.0] is the default value of ordinal features. *)
+
+val eval : evaluator -> ?missing_ok:bool -> feature_vector -> float
+(* evaluate the model using over input [feature_vector].  If
+   [missing_ok = false], exception ValueMissing is raised when a
+   feature value required by the model is not present in
+   [feature_vector].  Otherwise, a value of [0.0] is the implicit
+   value of ordinal features, and the anonymous category is the
+   implicit value of categorical features. *)
 
 val positive_category : logistic -> string
 (* return the positive category; without inversion (through the
