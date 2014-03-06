@@ -250,10 +250,11 @@ type feature_value = [ `Float of float | `String of string ]
 exception TypeMismatch of (feature_key * feature_value)
 exception CategoryNotFound of (feature_key * string)
 exception CategoryMissing of feature_key
+exception ValueMissing of feature_key
 
 type feature_vector = (feature_key * feature_value) list
 
-let eval_square sq feature_vector =
+let eval_square sq feature_vector missing_ok =
   (* build a map from integer feature id to feature value for all
      features values provided in [feature_vector].  Ignore feature
      values provided in [feature_vector] that are not required by the
@@ -295,19 +296,22 @@ let eval_square sq feature_vector =
     try
       Hashtbl.find id_to_feature feature_id
     with Not_found ->
-      match kind with
-        | `ORD ->
-          (* implicit value is zero *)
-          `Float 0.0
+      if missing_ok then
+        match kind with
+          | `ORD ->
+            (* implicit value is zero *)
+            `Float 0.0
 
-        | `CAT ->
-          match Hashtbl.find sq.id_to_feature feature_id with
-            | `OrdinalFeature _ -> assert false
-            | `CategoricalFeature cat ->
-              (* is this categorical feature have an anonymous category? *)
-              match cat.cf.cf_anonymous_category_index_opt with
-                | Some cat_id -> (`String cat_id)
-                | None -> raise (CategoryMissing (`Id feature_id))
+          | `CAT ->
+            match Hashtbl.find sq.id_to_feature feature_id with
+              | `OrdinalFeature _ -> assert false
+              | `CategoricalFeature cat ->
+                (* is this categorical feature have an anonymous category? *)
+                match cat.cf.cf_anonymous_category_index_opt with
+                  | Some cat_id -> (`String cat_id)
+                  | None -> raise (CategoryMissing (`Id feature_id))
+      else
+        raise (ValueMissing (`Id feature_id))
   in
   eval_trees get sq.trees
 
@@ -316,11 +320,11 @@ let logistic_probability f =
   let ef2 = exp f2 in
   1. /. ( 1. +. ef2 )
 
-let eval evaluator feature_vector =
+let eval evaluator ?(missing_ok=true) feature_vector =
   match evaluator with
-    | `Square sq -> eval_square sq feature_vector
+    | `Square sq -> eval_square sq feature_vector missing_ok
     | `Logistic { sq; invert } ->
-      let f = eval_square sq feature_vector in
+      let f = eval_square sq feature_vector missing_ok in
       let p = logistic_probability f in
       if invert then
         1. -. p
