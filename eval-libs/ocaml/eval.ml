@@ -247,7 +247,6 @@ let invert logistic =
 type feature_key = [ `Id of int | `Name of string ]
 type feature_value = [ `Float of float | `String of string ]
 
-exception FeatureNotFound of feature_key
 exception TypeMismatch of (feature_key * feature_value)
 exception CategoryNotFound of (feature_key * string)
 exception CategoryMissing of feature_key
@@ -256,43 +255,40 @@ type feature_vector = (feature_key * feature_value) list
 
 let eval_square sq feature_vector =
   (* build a map from integer feature id to feature value for all
-     features values provided in [feature_vector].  Check that the
-     feature values provided in [feature_vector] are actually required
-     in the model. Check that categories (values of a categorical
-     feature) are ones known in the model. *)
+     features values provided in [feature_vector].  Ignore feature
+     values provided in [feature_vector] that are not required by the
+     model. Check that categories (values of a categorical feature)
+     are ones known in the model. *)
   let id_to_feature = Hashtbl.create sq.num_features in
 
   List.iter (
     fun (key, value) ->
-      let feature =
-        match key with
-          | `Id feature_id -> (
-              try
-                Hashtbl.find sq.id_to_feature feature_id
-              with Not_found ->
-                raise (FeatureNotFound key)
-            )
-          | `Name feature_name ->
-            try
+      try
+        let feature =
+          match key with
+            | `Id feature_id ->
+              Hashtbl.find sq.id_to_feature feature_id
+
+            | `Name feature_name ->
               Hashtbl.find sq.name_to_feature feature_name
-            with Not_found ->
-              raise (FeatureNotFound key)
-      in
-      match feature, value with
-        | `OrdinalFeature ord, `Float f ->
-          Hashtbl.replace id_to_feature ord.of_feature_id (`Float f)
+        in
+        match feature, value with
+          | `OrdinalFeature ord, `Float f ->
+            Hashtbl.replace id_to_feature ord.of_feature_id (`Float f)
 
-        | `CategoricalFeature cat, `String category ->
-          let cat_id =
-            try
-              Hashtbl.find cat.category_to_id category
-            with Not_found ->
-              raise (CategoryNotFound (key, category))
-          in
-          Hashtbl.replace id_to_feature cat.cf.cf_feature_id (`String cat_id)
+          | `CategoricalFeature cat, `String category ->
+            let cat_id =
+              try
+                Hashtbl.find cat.category_to_id category
+              with Not_found ->
+                raise (CategoryNotFound (key, category))
+            in
+            Hashtbl.replace id_to_feature cat.cf.cf_feature_id (`String cat_id)
 
-        | _ -> raise (TypeMismatch (key, value))
-
+          | _ -> raise (TypeMismatch (key, value))
+      with Not_found ->
+        (* ignore feature id's and names that are not referenced by the model *)
+        ()
   ) feature_vector;
 
   let get kind feature_id =
