@@ -607,7 +607,36 @@ let float_or_int_feature
   )
 
 
-exception MixedTypeFeature of int (* feature id *)
+(* information about a feature that contains an illegal mixture of
+   types (string type cannot be mixed with numbers) *)
+type mixed_type_feature = {
+  mt_feature_id : feature_id;
+  mt_string_values : string list;
+  mt_float_values : float list;
+  mt_int_values : int list;
+}
+
+exception MixedTypeFeature of mixed_type_feature
+
+let mixed_type_feature_exn mt_feature_id i_values =
+  let mt_string_values, mt_float_values, mt_int_values = List.fold_left (
+      fun (string_values, float_values, int_values) (i, value) ->
+        match value with
+          | `String string_value ->
+            string_value :: string_values, float_values, int_values
+          | `Float float_value ->
+            string_values, float_value :: float_values, int_values
+          | `Int int_value ->
+            string_values, float_values, int_value :: int_values
+    ) ([], [], []) i_values
+  in
+  let mt = {
+    mt_feature_id;
+    mt_string_values;
+    mt_float_values;
+    mt_int_values
+  } in
+  raise (MixedTypeFeature mt)
 
 let write_feature j i_values n dog feature_id_to_name config =
   let hist = Hashtbl.create (n / 100) in
@@ -632,7 +661,8 @@ let write_feature j i_values n dog feature_id_to_name config =
           Printf.printf "%d: cat\n%!" j;
           Dog_io.WO.add_feature dog cat
     else
-      raise (MixedTypeFeature j)
+      mixed_type_feature_exn j i_values
+
   else if kc.n_float > 0 || kc.n_int > 0 then
 
     let float_or_int_feat = float_or_int_feature ~j kc hist ~n i_values
@@ -741,9 +771,31 @@ let create config =
         read_cells_write_features work_dir ~num_rows ~num_cell_files header
           config;
         0
-      with (MixedTypeFeature feature_id) ->
+      with (MixedTypeFeature mt) ->
         pr "feature %d (column %d) has feature values that are both numeric \
-          and categorical\n%!" feature_id (feature_id + 1);
+            and categorical\n" mt.mt_feature_id (mt.mt_feature_id + 1);
+
+        (* we should always have some string values in a mixed-type error *)
+        pr "sample string  values: %s\n%!"
+          (String.concat ", " (List.first 5 mt.mt_string_values));
+
+        (match mt.mt_int_values with
+          | [] -> ()
+          | _ ->
+            let int_values_s = List.map string_of_int
+                (List.first 5 mt.mt_int_values) in
+            pr "sample integer values: %s\n%!"
+              (String.concat ", " int_values_s)
+        );
+
+        (match mt.mt_float_values with
+          | [] -> ()
+          | _ ->
+            let float_values_s = List.map string_of_float
+                (List.first 5 mt.mt_float_values) in
+            pr "sample float   values: %s\n%!"
+              (String.concat ", " float_values_s)
+        );
         1
     )
     else (
@@ -755,8 +807,15 @@ let create config =
       1
     )
   in
+
   (* remove the working directory *)
-  Unix.rmdir work_dir;
+  (try
+    Unix.rmdir work_dir
+   with Unix.Unix_error _ ->
+     (* directory has contents; we don't bother trying to cleanup
+        well *)
+     ()
+  );
   exit_status
 
 
