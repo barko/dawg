@@ -133,6 +133,7 @@ type create = {
   no_header : bool;
   work_dir : string;
   max_width : int;
+  allow_variable_length_dense_rows : bool;
 }
 
 
@@ -144,13 +145,13 @@ let dummy_cell = (-1, -1, `Float nan)
    f := file index
 *)
 
-let write_cells_to_work_dir work_dir header next_row max_cells =
+let write_cells_to_work_dir work_dir header next_row config =
   let num_features = List.length header in
 
-  let cells = Array.create max_cells dummy_cell in
+  let cells = Array.create config.max_cells_in_mem dummy_cell in
 
   let append_cell ~c ~f cell =
-    if c < max_cells then (
+    if c < config.max_cells_in_mem then (
       cells.( c ) <- cell;
       c + 1, f
     )
@@ -159,13 +160,13 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
       Array.sort compare_cells cells;
       Printf.printf "done\n%!";
       write_cells_to_file work_dir f cells;
-      Array.fill cells 0 max_cells dummy_cell;
+      Array.fill cells 0 config.max_cells_in_mem dummy_cell;
       cells.(0) <- cell;
       1, f + 1
     )
   in
 
-  let rec loop ~i ~f ~c =
+  let rec loop ~i ~f ~c prev_dense_row_length_opt =
     if c mod 1000 = 0 then
       Printf.printf "files=%d rows=%d\n%!" f i;
 
@@ -184,20 +185,37 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
           i, f
 
       | `Ok (`Dense dense) ->
-        let row_length, c, f = List.fold_left (
+        let dense_row_length, c, f = List.fold_left (
             fun (j, c, f) value ->
               let c, f =
                 append_cell ~c ~f (j, i, value) in
               j + 1, c, f
           ) (0, c, f) dense in
-        loop ~i:(i+1) ~f ~c
+
+        (* check that all dense rows have the same length *)
+        let dense_row_length_opt =
+          match prev_dense_row_length_opt with
+            | None -> Some dense_row_length (* first dense row *)
+            | Some prev_dense_row_length ->
+              if not config.allow_variable_length_dense_rows &&
+                 prev_dense_row_length <> dense_row_length then (
+                Printf.printf "dense row %d has length %d, which is \
+                               different than length %d of previous \
+                               dense rows.\n%!"
+                  (i+1) dense_row_length prev_dense_row_length;
+                exit 1
+              )
+              else
+                prev_dense_row_length_opt
+        in
+        loop ~i:(i+1) ~f ~c dense_row_length_opt
 
       | `Ok (`Sparse sparse) ->
         let c, f = List.fold_left (
             fun (c, f) (j, value) ->
               append_cell ~c ~f (j, i, value)
           ) (c, f) sparse in
-        loop ~i:(i+1) ~f ~c
+        loop ~i:(i+1) ~f ~c prev_dense_row_length_opt
 
       | `SyntaxError err ->
         print_endline (Csv_io.string_of_error_location err);
@@ -214,7 +232,7 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
 
   in
   Printf.printf "num features: %d\n%!" num_features;
-  loop ~i:0 ~f:0 ~c:0
+  loop ~i:0 ~f:0 ~c:0 None
 
 let csv_to_cells work_dir config =
   let ch =
@@ -229,7 +247,7 @@ let csv_to_cells work_dir config =
     | `Ok (header, next_row) ->
       let num_rows, num_cell_files =
         write_cells_to_work_dir work_dir header next_row
-          config.max_cells_in_mem in
+          config in
       close_in ch;
       header, num_rows, num_cell_files
 
@@ -836,6 +854,7 @@ module Defaults = struct
     let home = Unix.getenv "HOME" in
     let dot_dawg = Filename.concat home ".dawg" in
     dot_dawg
+  let allow_variable_length_dense_rows = false
 end
 
 let create output_path input_path_opt max_density no_header max_cells_in_mem
@@ -863,6 +882,8 @@ let create output_path input_path_opt max_density no_header max_cells_in_mem
     max_cells_in_mem;
     work_dir = Defaults.work_dir;
     max_width;
+    allow_variable_length_dense_rows =
+      Defaults.allow_variable_length_dense_rows;
   } in
   let exit_status = create config in
 
