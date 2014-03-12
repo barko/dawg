@@ -611,6 +611,7 @@ let float_or_int_feature
    types (string type cannot be mixed with numbers) *)
 type mixed_type_feature = {
   mt_feature_id : feature_id;
+  mt_feature_name : string option;
   mt_string_values : string list;
   mt_float_values : float list;
   mt_int_values : int list;
@@ -618,7 +619,7 @@ type mixed_type_feature = {
 
 exception MixedTypeFeature of mixed_type_feature
 
-let mixed_type_feature_exn mt_feature_id i_values =
+let mixed_type_feature_exn mt_feature_id mt_feature_name i_values =
   let mt_string_values, mt_float_values, mt_int_values = List.fold_left (
       fun (string_values, float_values, int_values) (i, value) ->
         match value with
@@ -632,6 +633,7 @@ let mixed_type_feature_exn mt_feature_id i_values =
   in
   let mt = {
     mt_feature_id;
+    mt_feature_name;
     mt_string_values;
     mt_float_values;
     mt_int_values
@@ -661,7 +663,8 @@ let write_feature j i_values n dog feature_id_to_name config =
           Printf.printf "%d: cat\n%!" j;
           Dog_io.WO.add_feature dog cat
     else
-      mixed_type_feature_exn j i_values
+      let feature_name = feature_id_to_name j in
+      mixed_type_feature_exn j feature_name i_values
 
   else if kc.n_float > 0 || kc.n_int > 0 then
 
@@ -772,8 +775,14 @@ let create config =
           config;
         0
       with (MixedTypeFeature mt) ->
-        pr "feature %d (column %d) has feature values that are both numeric \
-            and categorical\n" mt.mt_feature_id (mt.mt_feature_id + 1);
+        let feature_name =
+          match mt.mt_feature_name with
+            | Some fn -> sp ", name %S" fn
+            | None -> ""
+        in
+        pr "feature %d (column %d%s) has feature values that are both numeric \
+            and categorical\n" mt.mt_feature_id (mt.mt_feature_id + 1)
+          feature_name;
 
         (* we should always have some string values in a mixed-type error *)
         pr "sample string  values: %s\n%!"
