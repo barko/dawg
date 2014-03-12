@@ -204,9 +204,8 @@ let write_cells_to_work_dir work_dir header next_row config =
                                dense rows.\n%!"
                   (i+1) dense_row_length prev_dense_row_length;
                 exit 1
-              )
-              else
-                prev_dense_row_length_opt
+              );
+              Some dense_row_length
         in
         loop ~i:(i+1) ~f ~c dense_row_length_opt
 
