@@ -49,4 +49,5 @@ val abspath : string -> string
 module List : sig
   include module type of List
   val iteri : (int -> 'a -> unit) -> 'a list -> unit
+  val first : int -> 'a list -> 'a list
 end

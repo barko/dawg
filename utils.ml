@@ -178,4 +178,21 @@ module List = struct
       | hd :: tl -> f i hd; iteri (succ i) tl
       | [] -> ()
     in iteri 0 l
+
+  let rec first accu n list =
+    if n = 0 then
+      List.rev accu
+    else
+      match list with
+        | h :: t ->
+          first (h :: accu) (n-1) t
+        | [] ->
+          List.rev accu
+
+  let first n list =
+    if n < 0 then
+      raise (Invalid_argument "List.first")
+    else
+      first [] n list
+
 end

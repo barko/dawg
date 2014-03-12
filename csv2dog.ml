@@ -133,6 +133,7 @@ type create = {
   no_header : bool;
   work_dir : string;
   max_width : int;
+  allow_variable_length_dense_rows : bool;
 }
 
 
@@ -144,13 +145,13 @@ let dummy_cell = (-1, -1, `Float nan)
    f := file index
 *)
 
-let write_cells_to_work_dir work_dir header next_row max_cells =
+let write_cells_to_work_dir work_dir header next_row config =
   let num_features = List.length header in
 
-  let cells = Array.create max_cells dummy_cell in
+  let cells = Array.create config.max_cells_in_mem dummy_cell in
 
   let append_cell ~c ~f cell =
-    if c < max_cells then (
+    if c < config.max_cells_in_mem then (
       cells.( c ) <- cell;
       c + 1, f
     )
@@ -159,13 +160,13 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
       Array.sort compare_cells cells;
       Printf.printf "done\n%!";
       write_cells_to_file work_dir f cells;
-      Array.fill cells 0 max_cells dummy_cell;
+      Array.fill cells 0 config.max_cells_in_mem dummy_cell;
       cells.(0) <- cell;
       1, f + 1
     )
   in
 
-  let rec loop ~i ~f ~c =
+  let rec loop ~i ~f ~c prev_dense_row_length_opt =
     if c mod 1000 = 0 then
       Printf.printf "files=%d rows=%d\n%!" f i;
 
@@ -184,20 +185,36 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
           i, f
 
       | `Ok (`Dense dense) ->
-        let row_length, c, f = List.fold_left (
+        let dense_row_length, c, f = List.fold_left (
             fun (j, c, f) value ->
               let c, f =
                 append_cell ~c ~f (j, i, value) in
               j + 1, c, f
           ) (0, c, f) dense in
-        loop ~i:(i+1) ~f ~c
+
+        (* check that all dense rows have the same length *)
+        let dense_row_length_opt =
+          match prev_dense_row_length_opt with
+            | None -> Some dense_row_length (* first dense row *)
+            | Some prev_dense_row_length ->
+              if not config.allow_variable_length_dense_rows &&
+                 prev_dense_row_length <> dense_row_length then (
+                Printf.printf "dense row %d has length %d, which is \
+                               different than length %d of previous \
+                               dense rows.\n%!"
+                  (i+1) dense_row_length prev_dense_row_length;
+                exit 1
+              );
+              Some dense_row_length
+        in
+        loop ~i:(i+1) ~f ~c dense_row_length_opt
 
       | `Ok (`Sparse sparse) ->
         let c, f = List.fold_left (
             fun (c, f) (j, value) ->
               append_cell ~c ~f (j, i, value)
           ) (c, f) sparse in
-        loop ~i:(i+1) ~f ~c
+        loop ~i:(i+1) ~f ~c prev_dense_row_length_opt
 
       | `SyntaxError err ->
         print_endline (Csv_io.string_of_error_location err);
@@ -214,7 +231,7 @@ let write_cells_to_work_dir work_dir header next_row max_cells =
 
   in
   Printf.printf "num features: %d\n%!" num_features;
-  loop ~i:0 ~f:0 ~c:0
+  loop ~i:0 ~f:0 ~c:0 None
 
 let csv_to_cells work_dir config =
   let ch =
@@ -229,7 +246,7 @@ let csv_to_cells work_dir config =
     | `Ok (header, next_row) ->
       let num_rows, num_cell_files =
         write_cells_to_work_dir work_dir header next_row
-          config.max_cells_in_mem in
+          config in
       close_in ch;
       header, num_rows, num_cell_files
 
@@ -607,7 +624,38 @@ let float_or_int_feature
   )
 
 
-exception MixedTypeFeature of int (* feature id *)
+(* information about a feature that contains an illegal mixture of
+   types (string type cannot be mixed with numbers) *)
+type mixed_type_feature = {
+  mt_feature_id : feature_id;
+  mt_feature_name : string option;
+  mt_string_values : string list;
+  mt_float_values : float list;
+  mt_int_values : int list;
+}
+
+exception MixedTypeFeature of mixed_type_feature
+
+let mixed_type_feature_exn mt_feature_id mt_feature_name i_values =
+  let mt_string_values, mt_float_values, mt_int_values = List.fold_left (
+      fun (string_values, float_values, int_values) (i, value) ->
+        match value with
+          | `String string_value ->
+            string_value :: string_values, float_values, int_values
+          | `Float float_value ->
+            string_values, float_value :: float_values, int_values
+          | `Int int_value ->
+            string_values, float_values, int_value :: int_values
+    ) ([], [], []) i_values
+  in
+  let mt = {
+    mt_feature_id;
+    mt_feature_name;
+    mt_string_values;
+    mt_float_values;
+    mt_int_values
+  } in
+  raise (MixedTypeFeature mt)
 
 let write_feature j i_values n dog feature_id_to_name config =
   let hist = Hashtbl.create (n / 100) in
@@ -632,7 +680,9 @@ let write_feature j i_values n dog feature_id_to_name config =
           Printf.printf "%d: cat\n%!" j;
           Dog_io.WO.add_feature dog cat
     else
-      raise (MixedTypeFeature j)
+      let feature_name = feature_id_to_name j in
+      mixed_type_feature_exn j feature_name i_values
+
   else if kc.n_float > 0 || kc.n_int > 0 then
 
     let float_or_int_feat = float_or_int_feature ~j kc hist ~n i_values
@@ -741,9 +791,37 @@ let create config =
         read_cells_write_features work_dir ~num_rows ~num_cell_files header
           config;
         0
-      with (MixedTypeFeature feature_id) ->
-        pr "feature %d (column %d) has feature values that are both numeric \
-          and categorical\n%!" feature_id (feature_id + 1);
+      with (MixedTypeFeature mt) ->
+        let feature_name =
+          match mt.mt_feature_name with
+            | Some fn -> sp ", name %S" fn
+            | None -> ""
+        in
+        pr "feature %d (column %d%s) has feature values that are both numeric \
+            and categorical\n" mt.mt_feature_id (mt.mt_feature_id + 1)
+          feature_name;
+
+        (* we should always have some string values in a mixed-type error *)
+        pr "sample string  values: %s\n%!"
+          (String.concat ", " (List.first 5 mt.mt_string_values));
+
+        (match mt.mt_int_values with
+          | [] -> ()
+          | _ ->
+            let int_values_s = List.map string_of_int
+                (List.first 5 mt.mt_int_values) in
+            pr "sample integer values: %s\n%!"
+              (String.concat ", " int_values_s)
+        );
+
+        (match mt.mt_float_values with
+          | [] -> ()
+          | _ ->
+            let float_values_s = List.map string_of_float
+                (List.first 5 mt.mt_float_values) in
+            pr "sample float   values: %s\n%!"
+              (String.concat ", " float_values_s)
+        );
         1
     )
     else (
@@ -755,8 +833,15 @@ let create config =
       1
     )
   in
+
   (* remove the working directory *)
-  Unix.rmdir work_dir;
+  (try
+    Unix.rmdir work_dir
+   with Unix.Unix_error _ ->
+     (* directory has contents; we don't bother trying to cleanup
+        well *)
+     ()
+  );
   exit_status
 
 
@@ -768,6 +853,7 @@ module Defaults = struct
     let home = Unix.getenv "HOME" in
     let dot_dawg = Filename.concat home ".dawg" in
     dot_dawg
+  let allow_variable_length_dense_rows = false
 end
 
 let create output_path input_path_opt max_density no_header max_cells_in_mem
@@ -795,6 +881,8 @@ let create output_path input_path_opt max_density no_header max_cells_in_mem
     max_cells_in_mem;
     work_dir = Defaults.work_dir;
     max_width;
+    allow_variable_length_dense_rows =
+      Defaults.allow_variable_length_dense_rows;
   } in
   let exit_status = create config in
 
