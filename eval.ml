@@ -182,7 +182,7 @@ let print_feature_importance ch feature_id_to_importance feature_id_to_name =
       assert( in_0_1_opt fi.positive );
       assert( in_0_1_opt fi.negative );
 
-      let feature_name = IntMap.find feature_id feature_id_to_name in
+      let feature_name = Hashtbl.find feature_id_to_name feature_id in
       fprintf ch "%d,%s,%.4e,%s,%s,%s\n"
         feature_id
         feature_name
@@ -250,10 +250,13 @@ type categorical_entry = {
 (* given a feature id and an observation get the corresponding value
    from the observation *)
 let mk_get features header =
-  let id_to_categorical_entry = Hashtbl.create 10 in
-  let feature_id_to_column_id = Hashtbl.create 10 in
-  let column_id_to_feature_id = Hashtbl.create 10 in
+  let feature_id_to_categorical_entry = Hashtbl.create 10 in
+  let feature_id_to_feature_name      = Hashtbl.create 10 in
+
+  let column_id_to_feature_id  = Hashtbl.create 10 in
   let column_name_to_column_id = Hashtbl.create 10 in
+
+  let feature_id_to_column_id = Hashtbl.create 10 in
 
   let add_to_id_map ~column_id ~feature_id =
     Hashtbl.add column_id_to_feature_id column_id feature_id;
@@ -271,8 +274,20 @@ let mk_get features header =
           cf_feature_id = feature_id;
           cf_categories;
           cf_anonymous_category_index_opt;
-          cf_feature_name_opt;
+          cf_feature_name_opt = feature_name_opt;
         } ->
+
+        let feature_name =
+          match feature_name_opt with
+            | Some feature_name ->
+              Hashtbl.replace feature_id_to_feature_name feature_id
+                feature_name;
+              feature_name
+            | None ->
+              pr "categorical feature with %d is anonymous\n%!" feature_id;
+              exit 1
+        in
+
         let category_to_index = Hashtbl.create 10 in
 
         (match cf_anonymous_category_index_opt with
@@ -296,27 +311,27 @@ let mk_get features header =
           anonymous_category_index_opt = cf_anonymous_category_index_opt;
           category_to_index;
         } in
-        Hashtbl.replace id_to_categorical_entry feature_id entry;
+        Hashtbl.replace feature_id_to_categorical_entry feature_id entry;
 
-        (match cf_feature_name_opt with
-          | Some feature_name -> (
-              try
-                let column_id =
-                  Hashtbl.find column_name_to_column_id feature_name in
-                add_to_id_map ~column_id ~feature_id;
+        (try
+           let column_id =
+             Hashtbl.find column_name_to_column_id feature_name in
+           add_to_id_map ~column_id ~feature_id;
 
-              with Not_found ->
-                pr "categorical feature %S is not present in input file\n%!"
-                  feature_name;
-                exit 1
-            )
-          | None -> ()
-
+         with Not_found ->
+           pr "categorical feature %S is not present in input file\n%!"
+             feature_name;
+           exit 1
         );
 
-      | `OrdinalFeature { of_feature_id = feature_id; of_feature_name_opt } -> (
-          match of_feature_name_opt with
+      | `OrdinalFeature {
+          of_feature_id = feature_id;
+          of_feature_name_opt = feature_name_opt
+        } -> (
+          match feature_name_opt with
             | Some feature_name -> (
+                Hashtbl.replace feature_id_to_feature_name feature_id
+                  feature_name;
                 try
                   let column_id =
                     Hashtbl.find column_name_to_column_id feature_name in
@@ -326,7 +341,9 @@ let mk_get features header =
                     feature_name;
                   exit 1
               )
-            | None -> ()
+            | None ->
+              pr "ordinal feature with %d is anonymous\n%!" feature_id;
+              exit 1
         )
 
   ) features;
@@ -336,7 +353,7 @@ let mk_get features header =
     | `Float f -> `Float f
     | `String category ->
       try
-        let entry = Hashtbl.find id_to_categorical_entry feature_id in
+        let entry = Hashtbl.find feature_id_to_categorical_entry feature_id in
         try
           let index = Hashtbl.find entry.category_to_index category in
           `String index
@@ -399,7 +416,8 @@ let mk_get features header =
         with Not_found ->
           (* perhaps this is an anonymous value? *)
           try
-            let entry = Hashtbl.find id_to_categorical_entry feature_id in
+            let entry = Hashtbl.find feature_id_to_categorical_entry
+                feature_id in
             match entry.anonymous_category_index_opt with
               | None -> raise (MissingValue feature_id)
               | Some index -> `String index
@@ -408,7 +426,7 @@ let mk_get features header =
             (* this is an ordinal feature, value is [0] *)
             `Float 0.0
   in
-  get
+  get, feature_id_to_feature_name
 
 let normal f =
   let probability = Logistic.probability f in
@@ -510,7 +528,7 @@ let model_eval
         exit 1
   in
 
-  let get = mk_get features header in
+  let get, feature_id_to_feature_name = mk_get features header in
 
   let rec loop row_num feature_id_to_importance pch =
     match next_row () with
@@ -574,14 +592,8 @@ let model_eval
   let norm_feature_id_to_importance = normalize_feature_importance
       feature_id_to_importance in
 
-  let num_columns, feature_id_to_name = List.fold_left (
-      fun (feature_id, feature_id_to_name) name ->
-        let feature_id_to_name = IntMap.add feature_id name
-            feature_id_to_name in
-        feature_id + 1, feature_id_to_name
-    ) (0, IntMap.empty) header in
-
-  print_feature_importance ich norm_feature_id_to_importance feature_id_to_name;
+  print_feature_importance ich norm_feature_id_to_importance
+    feature_id_to_feature_name;
 
   if pch <> stdout then
     close_out pch;
