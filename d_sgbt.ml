@@ -184,7 +184,24 @@ and cut_learning_rate conf t iteration =
   } in
   learn_with_fold_rate conf t iteration
 
-let learn_with_fold conf t fold initial_learning_rate deadline =
+
+let timeout = 1000. (* TODO *)
+
+let learn_with_fold conf t task_id active_workers fold
+    initial_learning_rate deadline =
+  lwt _ =
+    let request =
+    let open Proto_t in
+    `Configured (task_id, `Learn { fold; learning_rate = initial_learning_rate })
+    in
+    let is_response_valid = function
+      | `AckLearn -> true
+      | _ -> false
+    in
+    Worker_client.broad_send_recv active_workers timeout
+      request is_response_valid
+  in
+
   let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
   let leaf0 = t.splitter#first_tree fold_set in
   let shrunken_leaf0 = Tree.shrink initial_learning_rate leaf0 in
@@ -441,7 +458,6 @@ let learn conf =
     | _ -> false
   in
   let open Worker_client in
-  let timeout = 1000. in (* TODO *)
   lwt _ = broad_send_recv active_workers timeout request is_response_valid in
 
   let t = {
@@ -457,7 +473,9 @@ let learn conf =
 
   let rec loop fold trees_list initial_learning_rate =
     if fold < conf.num_folds then
-      match_lwt learn_with_fold conf t fold initial_learning_rate 0.0 with
+
+      match_lwt learn_with_fold conf t task_id active_workers
+                  fold initial_learning_rate 0.0 with
 
         | `Converged (effective_learning_rate, trees) ->
           let trees_list = List.rev_append trees trees_list in
