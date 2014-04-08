@@ -10,8 +10,8 @@ let meta path feature_opt =
         match Feat_utils.feature_descr_of_string feature with
           | Some descr -> (
 
-              let feature_set = Feat_map.create reader in
-              let features = Feat_map.find feature_set descr in
+              let map = Feat_map.create reader in
+              let features = Feat_map.find map descr in
               match features with
                 | [] ->
                   pr "feature(s) %s found\n%!" feature;
@@ -60,7 +60,6 @@ let select path feature =
       pr "malformed feature descriptor %S\n%!" feature;
       exit 1
 
-
     | Some descr ->
 
       let reader = Dog_io.RO.create path in
@@ -87,24 +86,27 @@ let select path feature =
       match array with
         | `Float a ->
           for i = 0 to n-1 do
-            pr "%d %f\n" i a.(i)
+            let idx, v = a.(i) in
+            pr "%d %d %f\n" i idx v
           done
 
         | `Int a ->
           for i = 0 to n-1 do
-            pr "%d %d\n" i a.(i)
+            let idx, v = a.(i) in
+            pr "%d %d %d\n" i idx v
           done
 
         | `String a ->
           for i = 0 to n-1 do
-            pr "%d %s\n" i a.(i)
+            let idx, v = a.(i) in
+            pr "%d %d %s\n" i idx v
           done
 
         | `StringAnon a ->
           for i = 0 to n-1 do
             match a.(i) with
-              | None   -> pr "%d {}\n" i
-              | Some s -> pr "%d %s\n" i s
+              | idx, None   -> pr "%d %d {}\n" i idx
+              | idx, Some v -> pr "%d %d %s\n" i idx v
           done
 
 

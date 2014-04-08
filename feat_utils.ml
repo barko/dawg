@@ -21,10 +21,10 @@ let array_of_afeature = function
             in
             match cat.c_vector with
               | `RLE (rle:Vec.t) ->
-                let result = Array.create rle.Vec.length None in
+                let result = Array.create rle.Vec.length (-1, None) in
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
-                    let string_opt = string_opt_of_int value in
+                    let string_opt = value, string_opt_of_int value in
                     for i = index to index + length - 1 do
                       result.(i) <- string_opt
                     done
@@ -32,12 +32,12 @@ let array_of_afeature = function
                 `StringAnon result
 
               | `Dense (vec:Vec.t) ->
-                let result = Array.create vec.Vec.length None in
+                let result = Array.create vec.Vec.length (-1, None) in
                 let width = Utils.num_bytes cat.c_cardinality in
                 Dense.iter ~width vec (
                   fun ~index ~value ->
                     let string_opt = string_opt_of_int value in
-                    result.(index) <- string_opt
+                    result.(index) <- value, string_opt
                 );
                 `StringAnon result
           )
@@ -45,10 +45,10 @@ let array_of_afeature = function
             let category_0 = List.hd cat.c_categories in
             match cat.c_vector with
               | `RLE rle ->
-                let result = Array.create rle.Vec.length category_0 in
+                let result = Array.create rle.Vec.length (-1, category_0) in
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
-                    let res = categories.( value ) in
+                    let res = value, categories.( value ) in
                     for i = index to index + length - 1 do
                       result.(i) <- res
                     done
@@ -57,11 +57,11 @@ let array_of_afeature = function
                 `String result
 
               | `Dense vec ->
-                let result = Array.create vec.Vec.length category_0 in
+                let result = Array.create vec.Vec.length (-1, category_0) in
                 let width = Utils.num_bytes cat.c_cardinality in
                 Dense.iter ~width vec (
                   fun ~index ~value ->
-                    result.(index) <- categories.( value )
+                    result.(index) <- value, categories.( value )
                 );
                 `String result
           )
@@ -72,12 +72,12 @@ let array_of_afeature = function
         | `RLE rle -> (
             match o_breakpoints with
               | `Float breakpoints ->
-                let result = Array.create rle.Vec.length 0.0 in
+                let result = Array.create rle.Vec.length (-1, 0.0) in
                 let breakpoints = Array.of_list breakpoints in
 
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
-                    let res = breakpoints.( value ) in
+                    let res = value, breakpoints.( value ) in
                     for i = index to index + length - 1 do
                       result.(i) <- res
                     done
@@ -85,12 +85,12 @@ let array_of_afeature = function
                 `Float result
 
               | `Int breakpoints ->
-                let result = Array.create rle.Vec.length 0 in
+                let result = Array.create rle.Vec.length (-1, 0) in
                 let breakpoints = Array.of_list breakpoints in
 
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
-                    let res = breakpoints.( value ) in
+                    let res = value, breakpoints.( value ) in
                     for i = index to index + length - 1 do
                       result.(i) <- res
                     done
@@ -102,25 +102,25 @@ let array_of_afeature = function
             match o_breakpoints with
               | `Float breakpoints ->
 
-                let result = Array.create vec.Vec.length 0.0 in
+                let result = Array.create vec.Vec.length (-1, 0.0) in
                 let breakpoints = Array.of_list breakpoints in
                 assert (o_cardinality = Array.length breakpoints);
 
                 Dense.iter ~width vec (
                   fun ~index ~value ->
-                    result.( index ) <- breakpoints.( value )
+                    result.( index ) <- value, breakpoints.( value )
                 );
                 `Float result
 
               | `Int breakpoints ->
 
-                let result = Array.create vec.Vec.length 0 in
+                let result = Array.create vec.Vec.length (-1, 0) in
                 let breakpoints = Array.of_list breakpoints in
                 assert (o_cardinality = Array.length breakpoints);
 
                 Dense.iter ~width vec (
                   fun ~index ~value ->
-                    result.( index ) <- breakpoints.( value )
+                    result.( index ) <- value, breakpoints.( value )
                 );
                 `Int result
           )
@@ -239,6 +239,6 @@ let string_of_feature_descr = function
   | `Id id -> Printf.sprintf "id:%d" id
 
 let feature_descr_of_string = function
-  | RE "name:" (alpha as name) -> Some (`Name name)
+  | RE "name:" (_+ as name) -> Some (`Name name)
   | RE "id:" (int as id) -> Some (`Id (int_of_string id))
   | _ -> None

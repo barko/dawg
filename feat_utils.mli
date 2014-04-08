@@ -1,8 +1,8 @@
 val array_of_afeature : Feat.afeature ->
-  [ `Float of float array
-  | `Int of int array
-  | `String of string array
-  | `StringAnon of string option array ]
+  [ `Float of (int * float) array
+  | `Int of (int * int) array
+  | `String of (int * string) array
+  | `StringAnon of (int * string option) array ]
 
 open Dog_t
 val id_of_feature : ('a, 'b) feature -> feature_id
