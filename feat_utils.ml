@@ -237,3 +237,8 @@ type feature_descr = [ `Name of string | `Id of int ]
 let string_of_feature_descr = function
   | `Name name -> Printf.sprintf "name:%s" name
   | `Id id -> Printf.sprintf "id:%d" id
+
+let feature_descr_of_string = function
+  | RE "name:" (alpha as name) -> Some (`Name name)
+  | RE "id:" (int as id) -> Some (`Id (int_of_string id))
+  | _ -> None
