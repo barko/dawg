@@ -1,54 +1,35 @@
 let pr = Printf.printf
 
-let meta path key_opt value_opt =
+let meta path feature_opt =
   let open Feat_map in
   let reader = Dog_io.RO.create path in
   let dog = Dog_io.RO.dog reader in
-  let feature_set = Feat_map.create reader in
 
-  match key_opt, value_opt with
-    | Some "id", Some value -> (
-        let target_feature_id = int_of_string value in
-        try
-          let feature = Feat_map.i_find_by_id feature_set target_feature_id in
-          let feature_s = Dog_j.string_of_ifeature feature in
-          print_endline (Yojson.Safe.prettify feature_s)
-        with Not_found ->
-          pr "feature with id %d not found\n%!" target_feature_id;
-          exit 1
-      )
+  match feature_opt with
+    | Some feature -> (
+        match Feat_utils.feature_descr_of_string feature with
+          | Some descr -> (
 
-    | Some "name", Some value -> (
-        let features = Feat_map.i_find_by_name feature_set value in
-        match features with
-          | [] ->
-            pr "feature with name %s not found\n%!" value;
+              let map = Feat_map.create reader in
+              let features = Feat_map.find map descr in
+              match features with
+                | [] ->
+                  pr "feature(s) %s found\n%!" feature;
+                  exit 1
+
+                | _ ->
+                  List.iter (
+                    fun feature ->
+                      let feature_s = Dog_j.string_of_ifeature feature in
+                      print_endline (Yojson.Safe.prettify feature_s)
+                  ) features
+            )
+          | None ->
+            pr "malformed feature descriptor %S\n%!" feature;
             exit 1
-
-          | _ ->
-            List.iter (
-              fun feature ->
-                let feature_s = Dog_j.string_of_ifeature feature in
-                print_endline (Yojson.Safe.prettify feature_s)
-            ) features
-
       )
 
-    | Some unknown, Some _ ->
-      pr "unknown search key %S (either \"id\", \
-          \"name\") with a corresponding value)\n%!" unknown;
-      exit 1
-
-    | None, Some value ->
-      pr "must specify search key (either \"id\", \
-          \"name\") along with the value %S\n%!" value;
-      exit 1
-
-    | Some key, None ->
-      pr "must specify search value along with key %S\n%!" key;
-      exit 1
-
-    | None, None ->
+    | None ->
       let dog_s = Yojson.Safe.prettify (Dog_j.string_of_t dog) in
       print_endline dog_s
 
@@ -73,47 +54,60 @@ let meta_short path =
             (string_or_empty c_feature_name_opt) c_cardinality
   )
 
-let select path target_feature_id =
-  let reader = Dog_io.RO.create path in
-  let dog = Dog_io.RO.dog reader in
-
-  let map = Feat_map.create reader in
-  let ifeature =
-    try
-      Feat_map.i_find_by_id map target_feature_id
-    with Not_found ->
-      pr "feature with id %d not found\n%!" target_feature_id;
+let select path feature =
+  match Feat_utils.feature_descr_of_string feature with
+    | None ->
+      pr "malformed feature descriptor %S\n%!" feature;
       exit 1
-  in
 
-  let afeature = Feat_map.i_to_a map ifeature in
+    | Some descr ->
 
-  let n = dog.Dog_t.num_observations in
-  let array = Feat_utils.array_of_afeature afeature in
+      let reader = Dog_io.RO.create path in
+      let dog = Dog_io.RO.dog reader in
+      let map = Feat_map.create reader in
 
-  match array with
-    | `Float a ->
-      for i = 0 to n-1 do
-        pr "%d %f\n" i a.(i)
-      done
+      let ifeature =
+        match Feat_map.find map descr with
+          | [ ifeature ] -> ifeature
 
-    | `Int a ->
-      for i = 0 to n-1 do
-        pr "%d %d\n" i a.(i)
-      done
+          | [] ->
+            pr "feature %s not found\n%!" feature;
+            exit 1
 
-    | `String a ->
-      for i = 0 to n-1 do
-        pr "%d %s\n" i a.(i)
-      done
+          | _ ->
+            pr "feature %s not unique\n%!" feature;
+            exit 1
+      in
+      let afeature = Feat_map.i_to_a map ifeature in
 
-    | `StringAnon a ->
-      for i = 0 to n-1 do
-        match a.(i) with
-          | None   -> pr "%d {}\n" i
-          | Some s -> pr "%d %s\n" i s
+      let n = dog.Dog_t.num_observations in
+      let array = Feat_utils.array_of_afeature afeature in
 
-      done
+      match array with
+        | `Float a ->
+          for i = 0 to n-1 do
+            let idx, v = a.(i) in
+            pr "%d %d %f\n" i idx v
+          done
+
+        | `Int a ->
+          for i = 0 to n-1 do
+            let idx, v = a.(i) in
+            pr "%d %d %d\n" i idx v
+          done
+
+        | `String a ->
+          for i = 0 to n-1 do
+            let idx, v = a.(i) in
+            pr "%d %d %s\n" i idx v
+          done
+
+        | `StringAnon a ->
+          for i = 0 to n-1 do
+            match a.(i) with
+              | idx, None   -> pr "%d %d {}\n" i idx
+              | idx, Some v -> pr "%d %d %s\n" i idx v
+          done
 
 
 open Cmdliner
@@ -123,22 +117,19 @@ let commands =
     Arg.(required & pos 0 (some string) None & info [] ~doc)
   in
 
+  let descr_doc = "limit result to a single feature, specified as either \
+                   'name:<feature-name>' or 'id:<feature-id>'" in
+
   let meta_cmd =
     let doc = "show a dog file's metadata either for a single feature \
                or all of them" in
-    let key =
-      let doc = "limit result to a single feature; \
-                 search by either \"id\" or \"name\"" in
-      Arg.(value & opt (some string) None & info ["k";"key"] ~doc)
+
+    let descr =
+      let doc = descr_doc in
+      Arg.(value & opt (some string) None & info ["f";"feature"] ~doc)
     in
 
-    let value =
-      let doc = "limit result to a single feature; \
-                 value associated with key" in
-      Arg.(value & opt (some string) None & info ["v";"value"] ~doc)
-    in
-
-    Term.(pure meta $ dog_path $ key $ value),
+    Term.(pure meta $ dog_path $ descr ),
     Term.info "dog-meta" ~doc
   in
 
@@ -149,11 +140,13 @@ let commands =
 
   let select_cmd =
     let doc = "show the data for a single feature" in
-    let feature_id =
-      let doc = "limit display of metadata to this feature id" in
-      Arg.(required & pos 1 (some int) None & info [] ~doc)
+
+    let descr =
+      let doc = descr_doc in
+      Arg.(required & opt (some string) None & info ["f";"feature"] ~doc)
     in
-    Term.(pure select $ dog_path $ feature_id),
+
+    Term.(pure select $ dog_path $ descr ),
     Term.info "dog-select" ~doc
   in
 

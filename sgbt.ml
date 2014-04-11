@@ -366,6 +366,19 @@ let learn conf =
     folds_of_feature_name conf sampler feature_map n y_feature_id
   in
 
+  assert (
+    (* make sure fold features (if any) are gone from the
+       [feature_map] *)
+    match conf.fold_feature_opt with
+      | Some fold_feature -> (
+          let ff = Feat_map.find feature_map fold_feature in
+          match ff with
+            | [] -> true
+            | _ -> false
+        )
+      | None -> true
+  );
+
   pr "features: included=%d excluded=%d\n%!"
     (Feat_map.length feature_map) num_excluded_features;
 
