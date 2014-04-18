@@ -13,6 +13,7 @@ let _ =
       Eval.commands;
       Bi_metrics.commands;
       Gen_code.commands;
+      Mod_inspect.commands;
       (* Worker.commands; *)
     ] in
 
