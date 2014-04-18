@@ -64,6 +64,7 @@ FILES[] =
   main
   csv2dog
   dog_inspect
+  mod_inspect
   feat_map
   feat_utils
   rlevec
