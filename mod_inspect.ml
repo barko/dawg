@@ -44,8 +44,9 @@ let update_importance branch branch_size leaf feature_id_to_importance =
         `Pos
       else
         (* error in tree construction: leafs that have value zero are
-           trivial, therefore not allowed *)
-        assert false
+           trivial; we can assign them to either the positive or
+           negative side *)
+        `Zero
     in
 
     (* iterate through the feature_id's in a branch, updating their
@@ -74,6 +75,9 @@ let update_importance branch branch_size leaf feature_id_to_importance =
               let positive = incr_opt score positive in
               positive, feature_importance.negative
 
+            | `Zero ->
+              (* update neither *)
+              feature_importance.positive, feature_importance.negative
         in
         let feature_importance = { unsigned; positive; negative } in
         IntMap.add feature_id feature_importance map
