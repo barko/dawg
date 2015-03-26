@@ -42,9 +42,13 @@ value:
 | FLOAT { (`Float $1) }
 | STRING { (`String $1) }
 
+value_opt:
+| value { Some $1}
+| { None }
+
 values:
-| value COMMA values { $1 :: $3 }
-| value { [ $1 ] }
+| value_opt COMMA values { $1 :: $3 }
+| value_opt { [ $1 ] }
 
 row:
 | row_sans_nl EOL { $1 }
@@ -55,11 +59,11 @@ row:
 | EOF { `EOF }
 
 row_sans_nl:
-| dense_row { `Dense $1 }
+| dense_row { $1 }
 | sparse_row { `Sparse $1 }
 
 dense_row:
-| values { $1 }
+| values { Csv_types.parse_opt_row $1 }
 
 sparse_row:
 | LCURLY pairs RCURLY { $2 }
