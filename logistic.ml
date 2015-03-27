@@ -93,7 +93,7 @@ let bool_to_minus_plus_one = function
 
 let y_array_of_cat n cat =
   let open Dog_t in
-  let y = Array.create n nan in
+  let y = Array.make n nan in
   if cat.c_cardinality <> 2 then
     raise Loss.WrongTargetType;
 
@@ -162,7 +162,7 @@ let y_array_of_cat n cat =
 let y_array_of_ord n ord =
   let open Dog_t in
   let { o_vector; o_breakpoints; o_cardinality } = ord in
-  let y = Array.create n nan in
+  let y = Array.make n nan in
   let map, positive_category, negative_category_opt =
     if o_cardinality = 2 then
       match o_breakpoints with
@@ -232,7 +232,7 @@ let y_array_of_ord n ord =
 let y_array_of_binarize_ord binarization_threshold n ord =
   let open Dog_t in
   let { o_vector; o_breakpoints; o_cardinality } = ord in
-  let y = Array.create n nan in
+  let y = Array.make n nan in
   let map, positive_category, negative_category_opt =
     match o_breakpoints, binarization_threshold with
       | `Float breakpoints, `GTE th ->
@@ -333,10 +333,10 @@ module Aggregate = struct
     t.sum_l.(value) <- t.sum_l.(value) +. l
 
   let create cardinality = {
-    sum_n = Array.create cardinality 0;
-    sum_z = Array.create cardinality 0.0;
-    sum_w = Array.create cardinality 0.0;
-    sum_l = Array.create cardinality 0.0;
+    sum_n = Array.make cardinality 0;
+    sum_z = Array.make cardinality 0.0;
+    sum_w = Array.make cardinality 0.0;
+    sum_l = Array.make cardinality 0.0;
   }
 
 end
@@ -351,17 +351,17 @@ class splitter binarization_threshold_opt y_feature n =
   let y, positive_category, negative_category_opt =
     y_array_of_feature binarization_threshold_opt y_feature n in
 
-  let z = Array.create n 0.0 in
-  let w = Array.create n 0.0 in
-  let l = Array.create n 0.0 in
-  let f = Array.create n 0.0 in
+  let z = Array.make n 0.0 in
+  let w = Array.make n 0.0 in
+  let l = Array.make n 0.0 in
+  let f = Array.make n 0.0 in
 
   let n1 = n + 1 in
 
-  let cum_z = Array.create n1 0.0 in
-  let cum_w = Array.create n1 0.0 in
-  let cum_l = Array.create n1 0.0 in
-  let cum_n = Array.create n1 0 in
+  let cum_z = Array.make n1 0.0 in
+  let cum_w = Array.make n1 0.0 in
+  let cum_l = Array.make n1 0.0 in
+  let cum_n = Array.make n1 0 in
 
   let in_subset = ref [| |] in
 

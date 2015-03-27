@@ -15,7 +15,7 @@ let string_of_metrics { n; loss } =
   Printf.sprintf "% 8d %.4e" n loss
 
 let get_y_as_array y_feature n =
-  let y = Array.create n nan in
+  let y = Array.make n nan in
   let open Dog_t in
   (match y_feature with
     | `Cat _ ->
@@ -91,9 +91,9 @@ module Aggregate = struct
     t.sum_l.(value) <- t.sum_l.(value) +. l
 
   let create cardinality = {
-    sum_n = Array.create cardinality 0;
-    sum_z = Array.create cardinality 0.0;
-    sum_l = Array.create cardinality 0.0;
+    sum_n = Array.make cardinality 0;
+    sum_z = Array.make cardinality 0.0;
+    sum_l = Array.make cardinality 0.0;
   }
 
 end
@@ -108,15 +108,15 @@ exception EmptyFold
 class splitter y_feature n =
   let y = get_y_as_array y_feature n in
 
-  let z = Array.create n 0.0 in
-  let l = Array.create n 0.0 in
-  let f = Array.create n 0.0 in
+  let z = Array.make n 0.0 in
+  let l = Array.make n 0.0 in
+  let f = Array.make n 0.0 in
 
   let n1 = n + 1 in
 
-  let cum_z = Array.create n1 0.0 in
-  let cum_l = Array.create n1 0.0 in
-  let cum_n = Array.create n1 0 in
+  let cum_z = Array.make n1 0.0 in
+  let cum_l = Array.make n1 0.0 in
+  let cum_n = Array.make n1 0 in
 
   let in_subset = ref [| |] in
 

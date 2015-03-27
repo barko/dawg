@@ -148,7 +148,7 @@ let dummy_cell = (-1, -1, `Float nan)
 let write_cells_to_work_dir work_dir header next_row config =
   let num_features = List.length header in
 
-  let cells = Array.create config.max_cells_in_mem dummy_cell in
+  let cells = Array.make config.max_cells_in_mem dummy_cell in
 
   let append_cell ~c ~f cell =
     if c < config.max_cells_in_mem then (
@@ -174,7 +174,7 @@ let write_cells_to_work_dir work_dir header next_row config =
       | `Ok `EOF ->
         if c > 0 then (
           (* write trailing cells, if there are any *)
-          let trailing_cells = Array.create c dummy_cell in
+          let trailing_cells = Array.make c dummy_cell in
           (* copy *)
           Array.blit cells 0 trailing_cells 0 c;
           Array.sort compare_cells trailing_cells;

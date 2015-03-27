@@ -194,7 +194,7 @@ let included_columns_of_spec header incl_excl_spec_as_list =
   in
   let included_set, _excluded_set =
     apply_commands incl_excl_set incl_excl_spec.commands in
-  let is_included = Array.create num_columns false in
+  let is_included = Array.make num_columns false in
   ColumnSet.iter (
     fun (index, _) ->
       is_included.(index) <- true

@@ -424,10 +424,10 @@ module RW = struct
     try
       let feature = IntMap.find feature_id ra.feature_id_to_feature in
       let { vector_id; vector_length } = veq_of_feature feature in
-      let buf = String.create vector_length in
+      let buf = Bytes.create vector_length in
       let array = ra.array in
       for i = 0 to vector_length - 1 do
-        buf.[i] <- Char.chr array.{ vector_id + i }
+        Bytes.set buf i (Char.chr array.{ vector_id + i })
       done;
       buf
     with Not_found ->

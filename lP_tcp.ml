@@ -12,10 +12,10 @@ let read_int32 s =
   (b0 lsl 24) lor (b1 lsl 16) lor (b2 lsl 8) lor b3
 
 let write_int32 s i =
-  s.[3] <- Char.chr (0xff land (i lsr 24));
-  s.[2] <- Char.chr (0xff land (i lsr 16));
-  s.[1] <- Char.chr (0xff land (i lsr  8));
-  s.[0] <- Char.chr (0xff land (i       ))
+  Bytes.set s 3 (Char.chr (0xff land (i lsr 24)));
+  Bytes.set s 2 (Char.chr (0xff land (i lsr 16)));
+  Bytes.set s 1 (Char.chr (0xff land (i lsr  8)));
+  Bytes.set s 0 (Char.chr (0xff land (i       )))
 
 let really_read sock buf offset n_to_read =
   let rec loop offset n =
@@ -33,7 +33,7 @@ let really_read sock buf offset n_to_read =
   loop offset n_to_read
 
 let really_read sock n =
-  let buf = String.create n in
+  let buf = Bytes.create n in
   really_read sock buf 0 n
 
 let read sock =
@@ -68,14 +68,14 @@ let really_write sock buf offset n_to_write =
 
 let really_write sock buf =
   try
-    lwt () = really_write sock buf 0 (String.length buf) in
+    lwt () = really_write sock buf 0 (Bytes.length buf) in
     Lwt.return true
   with Unix.Unix_error _ ->
     Lwt.return false
 
 let write sock message =
-  let message_length = String.length message in
-  let message_length_s = String.create 4 in
+  let message_length = Bytes.length message in
+  let message_length_s = Bytes.create 4 in
   write_int32 message_length_s message_length;
   lwt write_ok = really_write sock message_length_s in
   if write_ok then

@@ -12,7 +12,6 @@ OCAMLPACKS[] +=
   unix
   lwt.syntax
   lwt.unix
-  lwt.react
   bigarray
   atdgen
   cmdliner

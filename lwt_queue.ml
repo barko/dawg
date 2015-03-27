@@ -24,7 +24,7 @@ let num_readers t =
 let num_writers t =
   sequence_length t.writers
 
-let length t = 
+let length t =
   Queue.length t.q
 
 let get_max_length t =
@@ -36,7 +36,7 @@ let iter f t =
 let fold f x0 t =
   Queue.fold f x0 t.q
 
-let create ?(max_length=max_int) () = { 
+let create ?(max_length=max_int) () = {
   (* by default, create a queue that is effectively unbounded. *)
   q = Queue.create ();
   writers = Lwt_sequence.create ();
@@ -61,7 +61,7 @@ let put t v =
     );
     return ()
   )
-    
+
 let add = put
 
 let take t =
@@ -112,7 +112,7 @@ let set_max_length t new_max_length =
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions are
    met:
-   
+
    1. Redistributions of source code must retain the above copyright
    notice, this list of conditions and the following disclaimer.
 

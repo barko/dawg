@@ -1,1 +1,78 @@
-../../model.atd
+type ordinal_feature = {
+  feature_id : int;
+  feature_name_opt : string option;
+} <ocaml field_prefix="of_">
+
+type categorical_feature = {
+  feature_id : int;
+  feature_name_opt : string option;
+  categories : string list;
+
+  (* if [anonymous_category_index_opt] is [Some i], then the elements
+     in [categories] have indexes [0 ... i-1] and [i+1 ... n-1], where
+     [n] is [(List.length categories) + 1] *)
+  anonymous_category_index_opt : int option;
+} <ocaml field_prefix="cf_">
+
+type feature = [
+  | CategoricalFeature of categorical_feature
+  | OrdinalFeature of ordinal_feature
+]
+
+type ('a, 'b) categorical_node = {
+  feature_id : int;
+  category_directions : 'b;
+  left_tree  : ('a, 'b) tree;
+  right_tree : ('a, 'b) tree;
+} <ocaml field_prefix="cn_">
+
+type ('a, 'b) ordinal_node = {
+  feature_id : int;
+  split      : 'a;
+  left_tree  : ('a, 'b) tree;
+  right_tree : ('a, 'b) tree;
+} <ocaml field_prefix="on_">
+
+type ('a, 'b) tree = [
+  | Leaf of float
+  | CategoricalNode of ('a, 'b) categorical_node
+  | OrdinalNode of ('a, 'b) ordinal_node
+]
+
+type category_direction = [ Left | Right ]
+type direction_array = category_direction list <ocaml repr="array">
+
+(* a run-length encoded array of booleans *)
+type direction_rle = {
+  first_direction : category_direction; (* the first value of the array *)
+  run_lengths : int list (* list of run lengths *)
+} <ocaml field_prefix="dr_">
+
+type ('a, 'b) trees = ('a, 'b) tree list
+
+type ('a, 'b) logistic_model = {
+  positive_category : string;
+  negative_category_opt : string option;
+  features : feature list;
+  trees : ('a, 'b) trees;
+} <ocaml field_prefix="bi_">
+
+type ('a, 'b) regression_model = {
+  features : feature list;
+  trees : ('a, 'b) trees;
+} <ocaml field_prefix="re_">
+
+(* this representation is used in the process of learning *)
+type l_logistic_model   = (int, direction_array) logistic_model
+type l_regression_model = (int, direction_array) regression_model
+type l_trees            = (int, direction_array) trees
+type l_tree             = (int, direction_array) tree
+
+(* this more compact representaiton is used for serializing and
+   evaluating models outside of the learner *)
+type c_logistic_model   = (float, direction_rle) logistic_model
+type c_regression_model = (float, direction_rle) regression_model
+type c_trees            = (float, direction_rle) trees
+type c_tree             = (float, direction_rle) tree
+
+type c_model = [ Logistic of c_logistic_model | Square of c_regression_model ]

@@ -700,7 +700,7 @@ let f_111_1111 fl bit_index =
   assert false
 
 let fa =
-  let fa = Array.create 128 f_000_0000 in
+  let fa = Array.make 128 f_000_0000 in
   fa.(0b000_0000) <- f_000_0000;
   fa.(0b100_0000) <- f_100_0000;
   fa.(0b010_0000) <- f_010_0000;

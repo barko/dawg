@@ -36,7 +36,7 @@ let partition_observations in_subset splitting_feature best_split =
         assert (Array.length s_to_k = c_cardinality);
 
         (* create reverse mapping *)
-        let s_by_k = Array.create c_cardinality (-1) in
+        let s_by_k = Array.make c_cardinality (-1) in
         for s = 0 to c_cardinality-1 do
           let k = s_to_k.(s) in
           s_by_k.(k) <- s;
@@ -104,7 +104,7 @@ let best_split_of_features m =
 
 let directions_of_split s_to_k s_pivot =
   let num_categories = Array.length s_to_k in
-  let directions = Array.create num_categories `Right in
+  let directions = Array.make num_categories `Right in
   assert (0 <= s_pivot && s_pivot < num_categories );
   for s = 0 to s_pivot do
     let k = s_to_k.(s) in
@@ -318,8 +318,8 @@ module IntMap = Utils.XMap( Utils.Int )
 *)
 
 let mk_eval num_observations =
-  let gamma = Array.create num_observations nan in
-  let gamma_leaf = Array.create num_observations (`Leaf nan) in
+  let gamma = Array.make num_observations nan in
+  let gamma_leaf = Array.make num_observations (`Leaf nan) in
   fun find_by_id tree ->
     let feature_id_set = feature_id_set_of_tree tree in
     Array.fill gamma_leaf 0 num_observations tree;
