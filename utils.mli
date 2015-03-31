@@ -12,12 +12,18 @@ val f_xor : bool -> bool -> bool
 
 val f_and_not : bool -> bool -> bool
 
-module XMap : functor ( M : Map.OrderedType ) -> sig
-  include Map.S with type key = M.t
+module type XMapS = sig
+  include Map.S
   val find_opt : key -> 'a t -> 'a option
   val find_assert : key -> 'a t -> 'a
-
 end
+module type XSetS = sig
+  include Set.S
+  val to_list : t -> elt list
+end
+
+module XMap : functor ( M : Map.OrderedType ) -> XMapS with type key = M.t
+module XSet : functor ( M : Set.OrderedType ) -> XSetS with type elt = M.t
 
 module Int : sig
   type t = int
@@ -49,3 +55,5 @@ module List : sig
   val iteri : (int -> 'a -> unit) -> 'a list -> unit
   val first : int -> 'a list -> 'a list
 end
+
+module IntMap : XMapS with type key = int

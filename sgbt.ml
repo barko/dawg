@@ -6,6 +6,7 @@ let random_seed = [| 9271 ; 12074; 3; 12921; 92; 763 |]
 
 type loss_type = [ `Logistic | `Square ]
 
+type feature_monotonicity = (Feat_utils.feature_descr * Dog_t.monotonicity) list
 type conf = {
   loss_type : loss_type;
   dog_file_path : string;
@@ -21,6 +22,7 @@ type conf = {
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
+  feature_monotonicity : feature_monotonicity;
 }
 
 type t = {
@@ -90,9 +92,13 @@ type learning_iteration = {
 }
 
 let rec learn_with_fold_rate conf t iteration =
+  let feature_monotonicity_map =
+    Feat_map.assoc t.feature_map conf.feature_monotonicity
+  in
   let m = {
     Tree.max_depth = conf.max_depth;
     feature_map = t.feature_map;
+    feature_monotonicity_map;
     splitter = t.splitter
   } in
 

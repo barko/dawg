@@ -1,3 +1,7 @@
+module IntMap = Utils.IntMap
+module ISet = Utils.XSet(Utils.Int)
+module SSet = Utils.XSet(String)
+
 let pr fmt = Printf.printf (fmt ^^ "\n%!")
 
 let seconds_of_string = function
@@ -24,7 +28,6 @@ let deadline_of_string str =
     | Some delta_seconds ->
       let now = Unix.gettimeofday () in
       now +. delta_seconds
-
 
 let feature_descr_of_args name_opt id_opt =
   match name_opt, id_opt with
@@ -54,6 +57,10 @@ let learn
     max_trees_opt
     lte_binarization_threshold
     gte_binarization_threshold
+    feature_name_positive
+    feature_name_negative
+    feature_id_positive
+    feature_id_negative
   =
 
   if max_depth < 1 then (
@@ -151,6 +158,50 @@ let learn
       | None, None -> None
   in
 
+  let positive_feature_ids =
+    List.fold_left (fun accu id -> ISet.add id accu) ISet.empty feature_id_positive
+  in
+  let negative_feature_ids =
+    List.fold_left (fun accu id -> ISet.add id accu) ISet.empty feature_id_negative
+  in
+  let invalid_ids = ISet.inter positive_feature_ids negative_feature_ids in
+  let positive_feature_names =
+    List.fold_left (fun accu name -> SSet.add name accu) SSet.empty feature_name_positive
+  in
+  let negative_feature_names =
+    List.fold_left (fun accu name -> SSet.add name accu) SSet.empty feature_name_negative
+  in
+  let invalid_names = SSet.inter positive_feature_names negative_feature_names in
+
+  let () =
+    if not(ISet.is_empty invalid_ids) || not(SSet.is_empty invalid_names) then
+      begin
+        prerr_endline "[ERROR] Some are features declared to be both positive and negative:";
+        prerr_endline
+          (String.concat ", " (List.map string_of_int (ISet.to_list invalid_ids)));
+        prerr_endline
+          (String.concat ", " (SSet.to_list invalid_names));
+      end
+  in
+
+  let feature_monotonicity = [] in
+  let feature_monotonicity =
+    List.rev_append
+      (List.map (fun id -> ((`Id id), `Positive)) (ISet.to_list positive_feature_ids))
+      feature_monotonicity in
+  let feature_monotonicity =
+    List.rev_append
+      (List.map (fun id -> ((`Id id), `Negative)) (ISet.to_list negative_feature_ids))
+      feature_monotonicity in
+  let feature_monotonicity =
+    List.rev_append
+      (List.map (fun name -> ((`Name name), `Positive)) (SSet.to_list positive_feature_names))
+      feature_monotonicity in
+  let feature_monotonicity =
+    List.rev_append
+      (List.map (fun name -> ((`Name name), `Negative)) (SSet.to_list negative_feature_names))
+      feature_monotonicity in
+
   let conf =
     let open Sgbt in
     {
@@ -168,6 +219,7 @@ let learn
       fold_feature_opt;
       max_trees_opt;
       binarization_threshold_opt;
+      feature_monotonicity;
     }
   in
 
@@ -247,6 +299,31 @@ let commands =
                  learning." in
       Arg.(value & opt (some int) None &
            info ["f-id";"fold-feature-id"] ~docv:"INT" ~doc )
+    in
+
+    let feature_name_positive =
+      let doc = "Constrain feature to have a monotonic non-decreasing marginal \
+                 relationship with the response variable" in
+      Arg.(value & opt_all string [] &
+           info ["p";"positive-feature-name"] ~docv:"STRING" ~doc )
+    in
+    let feature_name_negative =
+      let doc = "Constrain feature to have a monotonic non-increasing marginal \
+                 relationship with the response variable" in
+      Arg.(value & opt_all string [] &
+           info ["n";"negative-feature-name"] ~docv:"STRING" ~doc )
+    in
+    let feature_id_positive =
+      let doc = "Constrain feature to have a monotonic non-decreasing marginal \
+                 relationship with the response variable" in
+      Arg.(value & opt_all int [] &
+           info ["p-id";"positive-feature-id"] ~docv:"STRING" ~doc )
+    in
+    let feature_id_negative =
+      let doc = "Constrain feature to have a monotonic non-increasing marginal \
+                 relationship with the response variable" in
+      Arg.(value & opt_all int [] &
+           info ["n-id";"negative-feature-id"] ~docv:"STRING" ~doc )
     in
 
     let convergence_rate_smoother_forgetful_factor =
@@ -329,7 +406,11 @@ let commands =
             loss_type $
             max_trees $
             binarize_lte $
-            binarize_gte
+            binarize_gte $
+            feature_name_positive $
+            feature_name_negative $
+            feature_id_positive $
+            feature_id_negative
          ),
     Term.info "learn" ~doc
   in

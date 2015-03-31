@@ -4,6 +4,8 @@ type category = string
 type feature_id = int
 type feature_name = string
 
+type monotonicity = [ Arbitrary | Negative | Positive ]
+
 (* fst is byte width *)
 type ('rle, 'dense) vector = [ RLE of 'rle | Dense of 'dense ]
 type breakpoints = [ Int of int list | Float of float list ]

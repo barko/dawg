@@ -3,7 +3,6 @@
 open Model_t
 let sp = Printf.sprintf
 
-module IntMap = Utils.XMap( Utils.Int )
 module RLEMap = Utils.XMap(
     struct
       type t = direction_rle
