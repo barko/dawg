@@ -1,14 +1,3 @@
-(* Support OCaml 3.12 *)
-module List = struct
-  include List
-
-  let iteri f l =
-    let rec iteri i = function
-      | hd :: tl -> f i hd; iteri (succ i) tl
-      | [] -> ()
-    in iteri 0 l
-end
-
 (* evaluate binary classification models over a csv file *)
 
 (* the reason we do not use module [Eval] eval-libs/ocaml is that we
@@ -161,6 +150,7 @@ let normalize_feature_importance feature_id_to_importance =
 
 
 open Printf
+let epr = eprintf
 let pr = printf
 let fpf = fprintf
 
@@ -522,11 +512,11 @@ let model_eval
         exit 1
 
       | `UnterminatedString line_num ->
-        printf "unterminated string on line %d\n%!" line_num;
+        epr "unterminated string on line %d\n%!" line_num;
         exit 1
 
       | `IntOverflow (line, offending_string) ->
-        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+        epr "value %S on line %d cannot be represented as an integer\n%!"
           offending_string line;
         exit 1
   in
@@ -546,7 +536,7 @@ let model_eval
             true, feature_id_to_importance
           with
             | TypeMismatch (feature_id, value) ->
-              printf "row %d: %s for feature %d is incompatible with the type \
+              epr "row %d: %s for feature %d is incompatible with the type \
                       of that feature\n%!"
                 row_num
                 (match value with
@@ -558,12 +548,12 @@ let model_eval
               false, Utils.IntMap.empty
 
             | MissingValue feature_id ->
-              printf "row %d: value for feature %d missing\n%!"
+              epr "row %d: value for feature %d missing\n%!"
                 row_num feature_id;
               false, Utils.IntMap.empty
 
             | UnknownCategory (feature_id, cat) ->
-              printf "row %d: value %S for categorical feature %d \
+              epr "row %d: value %S for categorical feature %d \
                       is not recognized\n%!"
                 row_num cat feature_id;
               false, Utils.IntMap.empty
@@ -579,11 +569,11 @@ let model_eval
         exit 1
 
       | `UnterminatedString line_num ->
-        printf "unterminated string on line %d\n%!" line_num;
+        epr "unterminated string on line %d\n%!" line_num;
         exit 1
 
       | `IntOverflow (line, offending_string) ->
-        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+        epr "value %S on line %d cannot be represented as an integer\n%!"
           offending_string line;
         exit 1
 
@@ -650,4 +640,3 @@ let commands =
     Term.info "eval" ~doc
   in
   [eval_cmd]
-
