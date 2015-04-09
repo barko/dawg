@@ -28,10 +28,15 @@ type error = [
 
 type next_row = unit -> [ `Ok of Csv_types.row | error ]
 
-let of_channel ch =
+let of_channel ~no_header ch =
   let lexbuf = Lexing.from_channel ch in
   try
-    let h = Csv_parser.header Csv_lexer.header lexbuf in
+    let h =
+      if not no_header then
+        Csv_parser.header Csv_lexer.header lexbuf
+      else
+        []
+    in
     let row () =
       try
         `Ok (Csv_parser.row Csv_lexer.row lexbuf)

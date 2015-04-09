@@ -234,6 +234,7 @@ let write_cells_to_work_dir work_dir header next_row config =
   loop ~i:0 ~f:0 ~c:0 None
 
 let csv_to_cells work_dir config =
+  let { input_path_opt; no_header } = config in
   let ch =
     match config.input_path_opt with
       | None ->
@@ -242,7 +243,7 @@ let csv_to_cells work_dir config =
       | Some path ->
         open_in path
   in
-  match Csv_io.of_channel ch with
+  match Csv_io.of_channel ~no_header ch with
     | `Ok (header, next_row) ->
       let num_rows, num_cell_files =
         write_cells_to_work_dir work_dir header next_row
