@@ -1,10 +1,9 @@
 (* a feature map backed by the read only Dog_io.RO *)
 open Dog_t
 
-module IntMap = Utils.XMap( Utils.Int )
 
 type t = {
-  id_to_feature : Feat.ifeature IntMap.t;
+  id_to_feature : Feat.ifeature Utils.IntMap.t;
   num_observations : int;
   array : UInt8Array.t;
   appendable : bool;
@@ -14,13 +13,13 @@ let add_to_map features =
   let map = List.fold_left (
       fun map cat ->
         let feature = `Cat cat in
-        IntMap.add cat.c_feature_id feature map
-    ) IntMap.empty features.cat_a in
+        Utils.IntMap.add cat.c_feature_id feature map
+    ) Utils.IntMap.empty features.cat_a in
 
   let map = List.fold_left (
       fun map ord ->
         let feature = `Ord ord in
-        IntMap.add ord.o_feature_id feature map
+        Utils.IntMap.add ord.o_feature_id feature map
     ) map features.ord_a in
   map
 
@@ -44,7 +43,7 @@ let i_to_a t =
   Feat_utils.i_to_a (offset_to_vec t)
 
 let iter t f =
-  IntMap.iter (
+  Utils.IntMap.iter (
     fun _ ifeature ->
       f (i_to_a t ifeature)
   ) t.id_to_feature
@@ -58,24 +57,24 @@ let fold t f x0 =
   !x
 
 let filter t f =
-  let id_to_feature = IntMap.filter f t.id_to_feature in
+  let id_to_feature = Utils.IntMap.filter f t.id_to_feature in
   { t with id_to_feature }
 
 let i_find_by_id t feature_id =
-  IntMap.find feature_id t.id_to_feature
+  Utils.IntMap.find feature_id t.id_to_feature
 
 let a_find_by_id t feature_id =
   i_to_a t (i_find_by_id t feature_id)
 
 let remove t feature_id =
-  let id_to_feature = IntMap.remove feature_id t.id_to_feature in
+  let id_to_feature = Utils.IntMap.remove feature_id t.id_to_feature in
   { t with id_to_feature }
 
 let length t =
-  IntMap.fold (fun _ _ c -> c + 1) t.id_to_feature 0
+  Utils.IntMap.fold (fun _ _ c -> c + 1) t.id_to_feature 0
 
 let i_find_by_name t feature_name =
-  IntMap.fold (
+  Utils.IntMap.fold (
     fun _ feature accu ->
       match feature with
         | `Ord { o_feature_name_opt = opt }
@@ -96,3 +95,18 @@ let find t = function
       [i_find_by_id t id]
     with Not_found ->
       []
+
+let feature_id feature = Feat.feature_id feature
+
+let assoc t descr_to_values =
+  List.fold_left (fun accu (descr, value) ->
+    let feature =
+      match find t descr with
+      | [hd] -> hd
+      | [] ->
+         Printf.ksprintf failwith "Feature %s is unknown"
+           (Feat_utils.string_of_feature_descr descr)
+      | _ -> assert false
+    in
+    Utils.IntMap.add (feature_id feature) value accu
+  ) Utils.IntMap.empty descr_to_values

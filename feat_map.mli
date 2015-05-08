@@ -23,3 +23,4 @@ val fold : t -> (Feat.afeature -> 'a -> 'a) -> 'a -> 'a
 val i_to_a : t -> Feat.ifeature -> Feat.afeature
 
 val find : t -> Feat_utils.feature_descr -> Feat.ifeature list
+val assoc : t -> (Feat_utils.feature_descr * 'a) list -> 'a Utils.IntMap.t

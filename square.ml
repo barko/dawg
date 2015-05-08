@@ -219,7 +219,11 @@ class splitter y_feature n =
       in_subset := in_subset_;
       update_cum ()
 
-    method best_split feature : (float * Proto_t.split) option =
+    method best_split
+             (monotonicity : Dog_t.monotonicity)
+             feature
+           : (float * Proto_t.split) option
+      =
       let feature_id = Feat_utils.id_of_feature feature in
 
       let open Aggregate in
@@ -230,9 +234,16 @@ class splitter y_feature n =
             let agg = agg_of_vector o_cardinality o_vector in
             o_cardinality, `Ord, agg
 
-          | `Cat { c_cardinality; c_vector; c_feature_id } ->
+          | `Cat { c_cardinality; c_vector; c_feature_id; c_feature_name_opt } ->
             let agg = agg_of_vector c_cardinality c_vector in
-            c_cardinality, `Cat, agg
+            if monotonicity <> `Arbitrary then
+              Printf.ksprintf failwith
+                "monotonic marginal effect not supported for categorical feature %d%s"
+                c_feature_id (match c_feature_name_opt with
+                                | Some(s) -> Printf.sprintf " (%s)" s
+                                | None -> "")
+            else
+              c_cardinality, `Cat, agg
       in
 
       let left = Aggregate.create cardinality in
@@ -322,53 +333,59 @@ class splitter y_feature n =
               let left_gamma  = left.sum_z.(k)    /. (float left_n)  in
               let right_gamma = right.sum_z.(k_1) /. (float right_n) in
 
-              let loss_left = updated_loss
+              if match monotonicity with
+                 | `Positive -> right_gamma > left_gamma
+                 | `Negative -> right_gamma < left_gamma
+                 | `Arbitrary -> true
+              then
+
+                let loss_left = updated_loss
                   ~gamma:left_gamma
                   ~sum_l:left.sum_l.(k)
                   ~sum_z:left.sum_z.(k)
                   ~sum_n:left_n
-              in
+                in
 
-              let loss_right = updated_loss
+                let loss_right = updated_loss
                   ~gamma:right_gamma
                   ~sum_l:right.sum_l.(k_1)
                   ~sum_z:right.sum_z.(k_1)
                   ~sum_n:right_n
-              in
-
-              let total_loss = loss_left +. loss_right in
-
-              let is_total_loss_smaller =
-                match !best_split with
-                  | None -> true
-                  | Some (best_total_loss, best_split) ->
-                    total_loss < best_total_loss
-              in
-
-              if is_total_loss_smaller then
-                let left = {
-                  s_n = left_n ;
-                  s_gamma = left_gamma ;
-                  s_loss = loss_left;
-                }
                 in
 
-                let right = {
-                  s_n = right_n ;
-                  s_gamma = right_gamma ;
-                  s_loss = loss_right;
-                }
+                let total_loss = loss_left +. loss_right in
+
+                let is_total_loss_smaller =
+                  match !best_split with
+                    | None -> true
+                    | Some (best_total_loss, best_split) ->
+                     total_loss < best_total_loss
                 in
 
-                let ord_split = {
-                  os_feature_id = feature_id;
-                  os_split = s;
-                  os_left = left;
-                  os_right = right;
-                } in
+                if is_total_loss_smaller then
+                  let left = {
+                    s_n = left_n ;
+                    s_gamma = left_gamma ;
+                    s_loss = loss_left;
+                  }
+                  in
 
-                let split = `CategoricalSplit (ord_split, s_to_k) in
-                best_split := Some (total_loss, split)
+                  let right = {
+                    s_n = right_n ;
+                    s_gamma = right_gamma ;
+                    s_loss = loss_right;
+                  }
+                  in
+
+                  let ord_split = {
+                    os_feature_id = feature_id;
+                    os_split = s;
+                    os_left = left;
+                    os_right = right;
+                  } in
+
+                  let split = `CategoricalSplit (ord_split, s_to_k) in
+                  best_split := Some (total_loss, split)
             )
           done;
           !best_split

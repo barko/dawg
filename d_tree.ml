@@ -255,7 +255,6 @@ let rec add_feature_id_to_set set = function
 let feature_id_set_of_tree tree =
   add_feature_id_to_set IntSet.empty tree
 
-module IntMap = Utils.XMap( Utils.Int )
 
 (*
   let nl tree_array =

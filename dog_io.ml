@@ -207,7 +207,6 @@ module RW = struct
     vector_length : int
   }
 
-  module IntMap = Utils.XMap( Utils.Int )
 
   let anotatate_length vector_length = function
     | `Dense vector_id -> `Dense { vector_id; vector_length }
@@ -267,8 +266,8 @@ module RW = struct
               cat.c_feature_id in
           let c_vector = anotatate_length vector_length cat.c_vector in
           let feature = `Cat { cat with c_vector } in
-          IntMap.add cat.c_feature_id feature map
-      ) IntMap.empty cat_a in
+          Utils.IntMap.add cat.c_feature_id feature map
+      ) Utils.IntMap.empty cat_a in
 
     let map = List.fold_left (
         fun map ord ->
@@ -276,7 +275,7 @@ module RW = struct
               ord.o_feature_id in
           let o_vector = anotatate_length vector_length ord.o_vector in
           let feature = `Ord { ord with o_vector } in
-          IntMap.add ord.o_feature_id feature map
+          Utils.IntMap.add ord.o_feature_id feature map
       ) map ord_a in
 
     map
@@ -288,7 +287,7 @@ module RW = struct
     array : UInt8Array.t;
 
     (* map feature id to features *)
-    feature_id_to_feature : qfeature IntMap.t;
+    feature_id_to_feature : qfeature Utils.IntMap.t;
 
     (* what are the number of observations in the feature set *)
     num_observations : int;
@@ -404,7 +403,7 @@ module RW = struct
   let write ra feature_id encoded_vec =
     let { array } = ra in
     try
-      let feature = IntMap.find feature_id ra.feature_id_to_feature in
+      let feature = Utils.IntMap.find feature_id ra.feature_id_to_feature in
       let { vector_id; vector_length } = veq_of_feature feature in
       let encoded_vector_length = String.length encoded_vec in
       if vector_length <> encoded_vector_length then
@@ -422,7 +421,7 @@ module RW = struct
 
   let read ra feature_id =
     try
-      let feature = IntMap.find feature_id ra.feature_id_to_feature in
+      let feature = Utils.IntMap.find feature_id ra.feature_id_to_feature in
       let { vector_id; vector_length } = veq_of_feature feature in
       let buf = Bytes.create vector_length in
       let array = ra.array in
@@ -435,7 +434,7 @@ module RW = struct
 
   let find ra feature_id =
     try
-      IntMap.find feature_id ra.feature_id_to_feature
+      Utils.IntMap.find feature_id ra.feature_id_to_feature
     with Not_found ->
       raise (FeatureIdNotFound feature_id)
 

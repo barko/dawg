@@ -1,7 +1,6 @@
 open Model_t
 open Dog_t
 
-module IntMap = Utils.XMap( Utils.Int )
 
 (* translate from the feature type defined in [Dog_t] to [Model_t] *)
 let feature_d_to_m = function
@@ -40,14 +39,14 @@ let float_array_of_breakpoints = function
 (* create a map from the feature id of ordinal features to their
    breakpoints *)
 let id_to_breakpoints id_to_feature =
-  IntMap.fold (
+  Utils.IntMap.fold (
     fun feature_id feature map ->
       match feature with
         | `Ord { o_breakpoints } ->
           let float_array = float_array_of_breakpoints o_breakpoints in
-          IntMap.add feature_id float_array map
+          Utils.IntMap.add feature_id float_array map
         | `Cat _ -> map
-  ) id_to_feature IntMap.empty
+  ) id_to_feature Utils.IntMap.empty
 
 let rle_of_category_array directions =
   let _, _, rle = Rle.encode_dense (Array.to_list directions) in
@@ -77,7 +76,7 @@ let category_array_of_rle { dr_first_direction; dr_run_lengths } =
 
 let rec tree_l_to_c id_to_breakpoints = function
   | `OrdinalNode { on_feature_id; on_split; on_left_tree; on_right_tree } ->
-    let breakpoints = IntMap.find on_feature_id id_to_breakpoints in
+    let breakpoints = Utils.IntMap.find on_feature_id id_to_breakpoints in
     let on_split = breakpoints.( on_split ) in
     let on_left_tree = tree_l_to_c id_to_breakpoints on_left_tree in
     let on_right_tree = tree_l_to_c id_to_breakpoints on_right_tree in
@@ -105,14 +104,14 @@ let rec tree_l_to_c id_to_breakpoints = function
 let rec add_features_of_tree feature_set map = function
   | `CategoricalNode { cn_feature_id; cn_left_tree; cn_right_tree } ->
     let feature = Feat_map.i_find_by_id feature_set cn_feature_id in
-    let map = IntMap.add cn_feature_id feature map in
+    let map = Utils.IntMap.add cn_feature_id feature map in
     let map = add_features_of_tree feature_set map cn_left_tree in
     let map = add_features_of_tree feature_set map cn_right_tree in
     map
 
   | `OrdinalNode { on_feature_id; on_left_tree; on_right_tree } ->
     let feature = Feat_map.i_find_by_id feature_set on_feature_id in
-    let map = IntMap.add on_feature_id feature map in
+    let map = Utils.IntMap.add on_feature_id feature map in
     let map = add_features_of_tree feature_set map on_left_tree in
     let map = add_features_of_tree feature_set map on_right_tree in
     map
@@ -126,11 +125,11 @@ let id_to_feature feature_set trees =
   List.fold_left (
     fun map tree ->
       add_features_of_tree feature_set map tree
-  ) IntMap.empty trees
+  ) Utils.IntMap.empty trees
 
 let l_to_c feature_set trees =
   let id_to_feature = id_to_feature feature_set trees in
-  let features = IntMap.fold (
+  let features = Utils.IntMap.fold (
       fun feature_id feature features ->
         (feature_d_to_m feature) :: features
     ) id_to_feature [] in

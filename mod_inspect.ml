@@ -28,7 +28,6 @@ let string_of_float_opt = function
   | None -> "        "
   | Some f -> sprintf "%.6f" f
 
-module IntMap = Utils.XMap( Utils.Int )
 
 let update_importance branch branch_size leaf feature_id_to_importance =
   (* the leaf value get's equally divided among all the features along
@@ -55,7 +54,7 @@ let update_importance branch branch_size leaf feature_id_to_importance =
       fun map feature_id ->
         let feature_importance =
           try
-            IntMap.find feature_id feature_id_to_importance
+            Utils.IntMap.find feature_id feature_id_to_importance
           with Not_found ->
             { unsigned = None; positive = None; negative = None }
         in
@@ -80,7 +79,7 @@ let update_importance branch branch_size leaf feature_id_to_importance =
               feature_importance.positive, feature_importance.negative
         in
         let feature_importance = { unsigned; positive; negative } in
-        IntMap.add feature_id feature_importance map
+        Utils.IntMap.add feature_id feature_importance map
 
     ) feature_id_to_importance branch
 
@@ -114,10 +113,10 @@ let importance_of_features trees =
   let feature_id_to_importance = List.fold_left (
     fun feature_id_to_importance tree ->
       fold_tree update_importance feature_id_to_importance tree
-  ) IntMap.empty trees in
+  ) Utils.IntMap.empty trees in
 
   (* sum, in order to normalize *)
-  let sum_importance = IntMap.fold (
+  let sum_importance = Utils.IntMap.fold (
       fun feature_id importance sum_importance ->
         { unsigned = sum_opt importance.unsigned sum_importance.unsigned;
           positive = sum_opt importance.positive sum_importance.positive;
@@ -138,7 +137,7 @@ let importance_of_features trees =
   in
 
   (* normalize *)
-  let feature_id_to_importance = IntMap.map (
+  let feature_id_to_importance = Utils.IntMap.map (
       fun importance ->
         { unsigned = div_opt importance.unsigned sum_unsigned;
           positive = div_opt importance.positive sum_positive;
@@ -148,7 +147,7 @@ let importance_of_features trees =
   in
 
   (* convert to list *)
-  let feature_id_to_importance = IntMap.fold (
+  let feature_id_to_importance = Utils.IntMap.fold (
     fun feature_id importance accu ->
       (feature_id, importance) :: accu
   ) feature_id_to_importance [] in

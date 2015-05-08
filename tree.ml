@@ -1,6 +1,8 @@
 open Proto_t
 open Model_t
 
+type feature_monotonicity_map = Dog_t.monotonicity Utils.IntMap.t
+
 let partition_observations in_subset splitting_feature best_split =
   let in_subset_left  = Array.copy in_subset in
   let in_subset_right = Array.copy in_subset in
@@ -74,6 +76,7 @@ let partition_observations in_subset splitting_feature best_split =
 type m = {
   max_depth : int;
   feature_map : Feat_map.t;
+  feature_monotonicity_map : feature_monotonicity_map;
   splitter : Loss.splitter
 }
 
@@ -83,7 +86,12 @@ let string_of_split { s_gamma ; s_n ; s_loss } =
 let best_split_of_features m =
   Feat_map.fold m.feature_map (
     fun feature best_opt ->
-      let s_opt = m.splitter#best_split feature in
+      let feature_id = Feat.feature_id feature in
+      let monotonicity =
+        try Utils.IntMap.find feature_id m.feature_monotonicity_map
+        with Not_found -> `Arbitrary
+      in
+      let s_opt = m.splitter#best_split monotonicity feature in
       match best_opt, s_opt with
         | Some (_, best_loss, best_split), Some (loss, split) ->
 
@@ -304,8 +312,6 @@ let rec add_feature_id_to_set set = function
 
 let feature_id_set_of_tree tree =
   add_feature_id_to_set IntSet.empty tree
-
-module IntMap = Utils.XMap( Utils.Int )
 
 (*
   let nl tree_array =

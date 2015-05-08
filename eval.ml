@@ -1,14 +1,3 @@
-(* Support OCaml 3.12 *)
-module List = struct
-  include List
-
-  let iteri f l =
-    let rec iteri i = function
-      | hd :: tl -> f i hd; iteri (succ i) tl
-      | [] -> ()
-    in iteri 0 l
-end
-
 (* evaluate binary classification models over a csv file *)
 
 (* the reason we do not use module [Eval] eval-libs/ocaml is that we
@@ -37,7 +26,6 @@ type feature_importance = {
   negative : feature_importance_score
 }
 
-module IntMap = Utils.XMap( Utils.Int )
 
 let max_opt y = function
   | None -> Some y
@@ -86,7 +74,7 @@ let update_importance leaf branch branch_size feature_id_to_importance =
       fun map feature_id ->
         let feature_importance =
           try
-            IntMap.find feature_id feature_id_to_importance
+            Utils.IntMap.find feature_id feature_id_to_importance
           with Not_found ->
             { unsigned = None; positive = None; negative = None }
         in
@@ -111,7 +99,7 @@ let update_importance leaf branch branch_size feature_id_to_importance =
               feature_importance.positive, feature_importance.negative
         in
         let feature_importance = { unsigned; positive; negative } in
-        IntMap.add feature_id feature_importance map
+        Utils.IntMap.add feature_id feature_importance map
 
     ) feature_id_to_importance branch
 
@@ -119,7 +107,7 @@ let update_importance leaf branch branch_size feature_id_to_importance =
    highest scoring feature has value 1 *)
 let normalize_feature_importance feature_id_to_importance =
   let sup0 = { unsigned = None; positive = None; negative = None } in
-  let sup = IntMap.fold (
+  let sup = Utils.IntMap.fold (
       fun feature_id fi sup ->
 
         let unsigned = max sup.unsigned fi.unsigned in
@@ -130,7 +118,7 @@ let normalize_feature_importance feature_id_to_importance =
     ) feature_id_to_importance sup0 in
 
   (* now divide each by [sup] *)
-  let norm = IntMap.fold (
+  let norm = Utils.IntMap.fold (
       fun feature_id fi accu ->
         let unsigned = div_opt fi.unsigned sup.unsigned in
         let positive = div_opt fi.positive sup.positive in
@@ -162,6 +150,7 @@ let normalize_feature_importance feature_id_to_importance =
 
 
 open Printf
+let epr = eprintf
 let pr = printf
 let fpf = fprintf
 
@@ -523,11 +512,11 @@ let model_eval
         exit 1
 
       | `UnterminatedString line_num ->
-        printf "unterminated string on line %d\n%!" line_num;
+        epr "unterminated string on line %d\n%!" line_num;
         exit 1
 
       | `IntOverflow (line, offending_string) ->
-        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+        epr "value %S on line %d cannot be represented as an integer\n%!"
           offending_string line;
         exit 1
   in
@@ -547,7 +536,7 @@ let model_eval
             true, feature_id_to_importance
           with
             | TypeMismatch (feature_id, value) ->
-              printf "row %d: %s for feature %d is incompatible with the type \
+              epr "row %d: %s for feature %d is incompatible with the type \
                       of that feature\n%!"
                 row_num
                 (match value with
@@ -556,18 +545,18 @@ let model_eval
                   | `String s -> sprintf "string value %S" s
                 )
                 feature_id;
-              false, IntMap.empty
+              false, Utils.IntMap.empty
 
             | MissingValue feature_id ->
-              printf "row %d: value for feature %d missing\n%!"
+              epr "row %d: value for feature %d missing\n%!"
                 row_num feature_id;
-              false, IntMap.empty
+              false, Utils.IntMap.empty
 
             | UnknownCategory (feature_id, cat) ->
-              printf "row %d: value %S for categorical feature %d \
+              epr "row %d: value %S for categorical feature %d \
                       is not recognized\n%!"
                 row_num cat feature_id;
-              false, IntMap.empty
+              false, Utils.IntMap.empty
 
         in
         if is_ok then
@@ -580,17 +569,17 @@ let model_eval
         exit 1
 
       | `UnterminatedString line_num ->
-        printf "unterminated string on line %d\n%!" line_num;
+        epr "unterminated string on line %d\n%!" line_num;
         exit 1
 
       | `IntOverflow (line, offending_string) ->
-        Printf.printf "value %S on line %d cannot be represented as an integer\n%!"
+        epr "value %S on line %d cannot be represented as an integer\n%!"
           offending_string line;
         exit 1
 
   in
   (* report row number with 1-index *)
-  let feature_id_to_importance = loop 1 IntMap.empty pch in
+  let feature_id_to_importance = loop 1 Utils.IntMap.empty pch in
 
   (* compute and print feature importance report *)
   let norm_feature_id_to_importance = normalize_feature_importance
@@ -651,4 +640,3 @@ let commands =
     Term.info "eval" ~doc
   in
   [eval_cmd]
-

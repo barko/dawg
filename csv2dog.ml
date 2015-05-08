@@ -5,17 +5,16 @@ open Dog_t
 
 module List = Utils.List
 
-module IntMap = Utils.XMap(Utils.Int)
 
 let index =
   let rec loop i map = function
     | [] -> map
     | h :: t ->
-      let map = IntMap.add i h map in
+      let map = Utils.IntMap.add i h map in
       loop (i+1) map t
   in
   fun list ->
-    loop 0 IntMap.empty list
+    loop 0 Utils.IntMap.empty list
 
 (* column index * row index * value *)
 type cell = int * int * Csv_types.value
@@ -727,7 +726,7 @@ let read_cells_write_features work_dir ~num_cell_files ~num_rows header config =
   let feature_id_to_name =
     let idx = index header in
     fun feature_id ->
-      IntMap.find_opt feature_id idx
+      Utils.IntMap.find_opt feature_id idx
   in
 
   let rec loop prev_j i_values dog =
