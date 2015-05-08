@@ -253,7 +253,7 @@ let rec loop_all_columns next_row out =
       loop_all_columns next_row out
 
 
-let main input_path output_path incl_excl_spec_as_list header_only =
+let main input_path output_path incl_excl_spec_as_list header_only no_header =
   let inch =
     match input_path with
       | None -> stdin
@@ -268,7 +268,7 @@ let main input_path output_path incl_excl_spec_as_list header_only =
 
   let out = output_string ouch in
 
-  match Csv_io.of_channel inch with
+  match Csv_io.of_channel ~no_header inch with
     | `SyntaxError err ->
       print_endline (Csv_io.string_of_error_location err);
       exit 1
@@ -350,7 +350,13 @@ let _ =
 
     let header_only =
       let doc = "only echo the elements of the header, one per line" in
-      Arg.(value & flag & info ["h";"header-only"] ~doc)
+      Arg.(value & flag & info ["H";"header-only"] ~doc)
+    in
+
+    let no_header =
+      let doc = "interpret the first line of the csv file as data, rather
+                 than a header providing names for the fields in file" in
+      Arg.(value & flag & info ["h";"no-header"] ~doc)
     in
 
     let incl_excl_cmds = Arg.(value & pos_all string [] & info []) in
@@ -360,6 +366,7 @@ let _ =
           $ output_file_path
           $ incl_excl_cmds
           $ header_only
+          $ no_header
          ), Term.info "csvcat" ~doc
   in
   match Term.eval ~catch:false command with

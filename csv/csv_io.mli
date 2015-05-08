@@ -14,4 +14,4 @@ type error = [
 ]
 
 type next_row = unit -> [ `Ok of Csv_types.row | error ]
-val of_channel : in_channel ->  [ `Ok of string list * next_row | error ]
+val of_channel : no_header:bool -> in_channel ->  [ `Ok of string list * next_row | error ]

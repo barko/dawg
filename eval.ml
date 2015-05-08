@@ -437,6 +437,7 @@ let model_eval
     prediction_file_path
     positive_category_opt
     importance_file_path
+    no_header
   =
 
   let pch =
@@ -504,7 +505,7 @@ let model_eval
       | Some path -> open_in path
   in
   let header, next_row =
-    match Csv_io.of_channel csv_ch with
+    match Csv_io.of_channel ~no_header csv_ch with
       | `Ok (header, next_row) -> header, next_row
 
       | `SyntaxError loc ->
@@ -611,7 +612,7 @@ let commands =
   let positive_category =
     let doc = "the positive target class (implies logistic model)" in
     Arg.(value & opt (some string) None &
-         info ["p";"positive"] ~docv:"STRING" ~doc)
+         info ["P";"positive"] ~docv:"STRING" ~doc)
   in
 
   let prediction_file_path =
@@ -627,6 +628,12 @@ let commands =
     Arg.(value & opt (some string) None & info ["importance"] ~docv:"PATH" ~doc)
   in
 
+  let no_header =
+    let doc = "interpret the first line of the csv file as data, rather
+               than a header providing names for the fields in file" in
+    Arg.(value & flag & info ["h";"no-header"] ~doc)
+  in
+
   let eval_cmd =
     let doc = "evaluate a binary classification model on each \
                row of a csv file" in
@@ -635,7 +642,8 @@ let commands =
              csv_file_path $
              prediction_file_path $
              positive_category $
-             importance_file_path
+             importance_file_path $
+             no_header
          ),
     Term.info "eval" ~doc
   in
