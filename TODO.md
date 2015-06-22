@@ -6,9 +6,6 @@
 * allow for the sparse specification of the csv header; all
   unspecified columns can then only be referred to by id.
 
-* remove feature importance calculations from eval.ml (now statically
-  computed in `dawg mod file.mod`
-
 * fix `OMakefile` so that we can just make with `omake` rather than the
   more cumbersome `OCAMLPATH=$PATH omake`
 

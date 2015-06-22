@@ -1,9 +1,5 @@
 (* evaluate binary classification models over a csv file *)
 
-(* the reason we do not use module [Eval] eval-libs/ocaml is that we
-   want to do more work here; namely, compute feature importance as we
-   evaluate the model *)
-
 exception TypeMismatch of (int * Csv_types.value)
 
 (* model calls or a categorical (ordinal) type, but value
@@ -18,137 +14,6 @@ exception UnknownCategory of (int * string)
 
 open Model_t
 
-type feature_importance_score = float option
-
-type feature_importance = {
-  unsigned : feature_importance_score;
-  positive : feature_importance_score;
-  negative : feature_importance_score
-}
-
-
-let max_opt y = function
-  | None -> Some y
-  | Some x -> Some (max x y)
-
-let f_incr_opt delta = function
-  | None -> Some delta
-  | Some x -> Some (x +. delta)
-
-let i_incr_opt delta = function
-  | None -> Some delta
-  | Some x -> Some (x + delta)
-
-let i_to_f_opt = function
-  | None -> None
-  | Some x -> Some (float x)
-
-let div_opt x y =
-  match x, y with
-    | None, _ -> None
-    | _, None -> None
-    | Some x, Some y -> Some (x /. y)
-
-let update_importance leaf branch branch_size feature_id_to_importance =
-  (* the leaf value get's equally divided among all the features along
-     the branch *)
-  if branch_size = 0 then
-    feature_id_to_importance
-  else
-    let score = abs_float (leaf /. (float branch_size)) in
-    let sign =
-      if leaf < 0.0 then
-        `Neg
-      else if leaf > 0.0 then
-        `Pos
-      else
-        (* error in tree construction: leafs that have value zero are
-           trivial; we can assign them to either the positive or
-           negative side *)
-        `Zero
-    in
-
-    (* iterate through the feature_id's in a branch, updating their
-       feature importance scores *)
-    List.fold_left (
-      fun map feature_id ->
-        let feature_importance =
-          try
-            Utils.IntMap.find feature_id feature_id_to_importance
-          with Not_found ->
-            { unsigned = None; positive = None; negative = None }
-        in
-        let unsigned = feature_importance.unsigned in
-        let unsigned = f_incr_opt score unsigned in
-        let positive, negative =
-          match sign with
-            | `Neg ->
-              (* update negative *)
-              let negative = feature_importance.negative in
-              let negative = f_incr_opt score negative in
-              feature_importance.positive, negative
-
-            | `Pos ->
-              (* update negative *)
-              let positive = feature_importance.positive in
-              let positive = f_incr_opt score positive in
-              positive, feature_importance.negative
-
-            | `Zero ->
-              (* update neither *)
-              feature_importance.positive, feature_importance.negative
-        in
-        let feature_importance = { unsigned; positive; negative } in
-        Utils.IntMap.add feature_id feature_importance map
-
-    ) feature_id_to_importance branch
-
-(* for each importance metric, normalize the scores so that the
-   highest scoring feature has value 1 *)
-let normalize_feature_importance feature_id_to_importance =
-  let sup0 = { unsigned = None; positive = None; negative = None } in
-  let sup = Utils.IntMap.fold (
-      fun feature_id fi sup ->
-
-        let unsigned = max sup.unsigned fi.unsigned in
-        let positive = max sup.positive fi.positive in
-        let negative = max sup.negative fi.negative in
-        { unsigned; positive; negative }
-
-    ) feature_id_to_importance sup0 in
-
-  (* now divide each by [sup] *)
-  let norm = Utils.IntMap.fold (
-      fun feature_id fi accu ->
-        let unsigned = div_opt fi.unsigned sup.unsigned in
-        let positive = div_opt fi.positive sup.positive in
-        let negative = div_opt fi.negative sup.negative in
-
-        let sum_importance = ref 0.0 in
-        let count = ref 0 in
-        (match unsigned with
-          | Some x -> sum_importance := !sum_importance +. x; incr count
-          | None -> ()
-        );
-        (match positive with
-          | Some x -> sum_importance := !sum_importance +. x; incr count
-          | None -> ()
-        );
-        (match negative with
-          | Some x -> sum_importance := !sum_importance +. x; incr count
-          | None -> ()
-        );
-        assert ( !count > 0 );
-        let average_importance = !sum_importance /. (float !count) in
-        let fi= { unsigned; positive; negative } in
-        (feature_id, average_importance, fi) :: accu
-
-    ) feature_id_to_importance [] in
-
-  (* sort by average importance, descending *)
-  List.sort (fun (_,a1,_) (_,a2,_) -> Pervasives.compare a2 a1) norm
-
-
 open Printf
 let epr = eprintf
 let pr = printf
@@ -160,32 +25,6 @@ let in_0_1 v =
 let in_0_1_opt = function
   | None -> true
   | Some v -> in_0_1 v
-
-let string_of_float_opt = function
-  | None -> ""
-  | Some f -> sprintf "%.4e" f
-
-let print_feature_importance ch feature_id_to_importance feature_id_to_name =
-  fprintf ch "id,name,average,unsigned,positive,negative\n";
-
-  List.iter (
-    fun (feature_id, average_importance, fi) ->
-      assert( in_0_1 average_importance );
-      assert( in_0_1_opt fi.unsigned );
-      assert( in_0_1_opt fi.positive );
-      assert( in_0_1_opt fi.negative );
-
-      let feature_name = Hashtbl.find feature_id_to_name feature_id in
-      fprintf ch "%d,%s,%.4e,%s,%s,%s\n"
-        feature_id
-        feature_name
-        average_importance
-        (string_of_float_opt fi.unsigned)
-        (string_of_float_opt fi.positive)
-        (string_of_float_opt fi.negative)
-
-  ) feature_id_to_importance
-
 
 let rec eval_tree get branch branch_size = function
   | `Leaf value -> value, branch, branch_size
@@ -226,13 +65,12 @@ let rec eval_tree get branch branch_size = function
 let eval_tree get tree =
   eval_tree get [] 0 tree
 
-let eval_trees get feature_id_to_importance trees =
+let eval_trees get trees =
   List.fold_left (
-    fun (sum, map) tree ->
+    fun sum tree ->
       let f, branch, branch_size = eval_tree get tree in
-      let map = update_importance f branch branch_size map in
-      sum +. f, map
-  ) (0.0, feature_id_to_importance) trees
+      sum +. f
+  ) 0.0 trees
 
 
 type categorical_entry = {
@@ -436,18 +274,11 @@ let model_eval
     csv_file_path_opt
     prediction_file_path
     positive_category_opt
-    importance_file_path
     no_header
   =
 
   let pch =
     match prediction_file_path with
-      | None -> stdout
-      | Some path -> open_out path
-  in
-
-  let ich =
-    match importance_file_path with
       | None -> stdout
       | Some path -> open_out path
   in
@@ -524,17 +355,16 @@ let model_eval
 
   let get, feature_id_to_feature_name = mk_get features header in
 
-  let rec loop row_num feature_id_to_importance pch =
+  let rec loop row_num pch =
     match next_row () with
-      | `Ok `EOF -> feature_id_to_importance
+      | `Ok `EOF -> ()
       | `Ok ((`Dense _ | `Sparse _ ) as row) ->
 
-        let is_ok, feature_id_to_importance =
+        let is_ok =
           try
-            let f, feature_id_to_importance = eval_trees (get row)
-                feature_id_to_importance trees in
+            let f = eval_trees (get row) trees in
             fprintf pch "%f\n" (transform f);
-            true, feature_id_to_importance
+            true
           with
             | TypeMismatch (feature_id, value) ->
               epr "row %d: %s for feature %d is incompatible with the type \
@@ -546,22 +376,22 @@ let model_eval
                   | `String s -> sprintf "string value %S" s
                 )
                 feature_id;
-              false, Utils.IntMap.empty
+              false
 
             | MissingValue feature_id ->
               epr "row %d: value for feature %d missing\n%!"
                 row_num feature_id;
-              false, Utils.IntMap.empty
+              false
 
             | UnknownCategory (feature_id, cat) ->
               epr "row %d: value %S for categorical feature %d \
                       is not recognized\n%!"
                 row_num cat feature_id;
-              false, Utils.IntMap.empty
+              false
 
         in
         if is_ok then
-          loop (row_num + 1) feature_id_to_importance pch
+          loop (row_num + 1) pch
         else
           exit 1
 
@@ -580,20 +410,10 @@ let model_eval
 
   in
   (* report row number with 1-index *)
-  let feature_id_to_importance = loop 1 Utils.IntMap.empty pch in
-
-  (* compute and print feature importance report *)
-  let norm_feature_id_to_importance = normalize_feature_importance
-      feature_id_to_importance in
-
-  print_feature_importance ich norm_feature_id_to_importance
-    feature_id_to_feature_name;
+  loop 1 pch;
 
   if pch <> stdout then
-    close_out pch;
-
-  if ich <> stdout then
-    close_out ich
+    close_out pch
 
 open Cmdliner
 
@@ -622,12 +442,6 @@ let commands =
          info ["p";"prediction"] ~docv:"PATH" ~doc)
   in
 
-  let importance_file_path =
-    let doc = "path of file to contain feature importance report \
-               (absent=stdout)" in
-    Arg.(value & opt (some string) None & info ["importance"] ~docv:"PATH" ~doc)
-  in
-
   let no_header =
     let doc = "interpret the first line of the csv file as data, rather
                than a header providing names for the fields in file" in
@@ -642,7 +456,6 @@ let commands =
              csv_file_path $
              prediction_file_path $
              positive_category $
-             importance_file_path $
              no_header
          ),
     Term.info "eval" ~doc
