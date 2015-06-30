@@ -5,6 +5,7 @@ exception TypeMismatch of (int * Csv_types.value)
 (* model calls or a categorical (ordinal) type, but value
    presented is ordinal (categorical) *)
 
+exception ColumnOutOfBounds of int
 exception MissingValue of int
 (* data presented does not have a value for a particular feature id *)
 
@@ -106,18 +107,24 @@ let mk_get features header =
           cf_categories;
           cf_anonymous_category_index_opt;
           cf_feature_name_opt = feature_name_opt;
-        } ->
-
-        let feature_name =
+        } -> (
           match feature_name_opt with
             | Some feature_name ->
               Hashtbl.replace feature_id_to_feature_name feature_id
                 feature_name;
-              feature_name
+              (try
+                  let column_id =
+                    Hashtbl.find column_name_to_column_id feature_name in
+                  add_to_id_map ~column_id ~feature_id;
+
+                with Not_found ->
+                  pr "categorical feature %S is not present in input file\n%!"
+                     feature_name;
+                  exit 1
+              )
             | None ->
-              pr "categorical feature with %d is anonymous\n%!" feature_id;
-              exit 1
-        in
+               add_to_id_map ~column_id:feature_id ~feature_id
+        );
 
         let category_to_index = Hashtbl.create 10 in
 
@@ -142,18 +149,7 @@ let mk_get features header =
           anonymous_category_index_opt = cf_anonymous_category_index_opt;
           category_to_index;
         } in
-        Hashtbl.replace feature_id_to_categorical_entry feature_id entry;
-
-        (try
-           let column_id =
-             Hashtbl.find column_name_to_column_id feature_name in
-           add_to_id_map ~column_id ~feature_id;
-
-         with Not_found ->
-           pr "categorical feature %S is not present in input file\n%!"
-             feature_name;
-           exit 1
-        );
+        Hashtbl.replace feature_id_to_categorical_entry feature_id entry
 
       | `OrdinalFeature {
           of_feature_id = feature_id;
@@ -173,10 +169,8 @@ let mk_get features header =
                   exit 1
               )
             | None ->
-              pr "ordinal feature with %d is anonymous\n%!" feature_id;
-              exit 1
+               add_to_id_map ~column_id:feature_id ~feature_id
         )
-
   ) features;
 
   let translate_value feature_id = function
@@ -218,7 +212,7 @@ let mk_get features header =
         if column_id < len_dense then
           translate_value feature_id dense.(column_id)
         else
-          raise (MissingValue feature_id)
+          raise (ColumnOutOfBounds feature_id)
 
     | `Sparse (sparse : (int * Csv_types.value) list) ->
       (* convert to hashtable, for faster random access *)
@@ -379,7 +373,12 @@ let model_eval
               false
 
             | MissingValue feature_id ->
-              epr "row %d: value for feature %d missing\n%!"
+              epr "sparse row %d: value for feature %d missing\n%!"
+                row_num feature_id;
+              false
+
+            | ColumnOutOfBounds feature_id ->
+              epr "dense row %d: column out of bounds: %d\n%!"
                 row_num feature_id;
               false
 
