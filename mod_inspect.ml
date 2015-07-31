@@ -111,56 +111,62 @@ let fold_tree f x0 tree =
 
 let importance_of_features trees =
   let feature_id_to_importance = List.fold_left (
-    fun feature_id_to_importance tree ->
-      fold_tree update_importance feature_id_to_importance tree
-  ) Utils.IntMap.empty trees in
+      fun feature_id_to_importance tree ->
+        fold_tree update_importance feature_id_to_importance tree
+    ) Utils.IntMap.empty trees in
 
-  (* sum, in order to normalize *)
-  let sum_importance = Utils.IntMap.fold (
-      fun feature_id importance sum_importance ->
-        { unsigned = sum_opt importance.unsigned sum_importance.unsigned;
-          positive = sum_opt importance.positive sum_importance.positive;
-          negative = sum_opt importance.negative sum_importance.negative
-        }
-    ) feature_id_to_importance
-      { unsigned = None; positive = None; negative = None }
+  if Utils.IntMap.is_empty feature_id_to_importance then
+    (* this is the trivial model, without dependence on features *)
+    []
+  else
+    (* sum, in order to normalize *)
+    let sum_importance = Utils.IntMap.fold (
+        fun feature_id importance sum_importance ->
+          { unsigned = sum_opt importance.unsigned sum_importance.unsigned;
+            positive = sum_opt importance.positive sum_importance.positive;
+            negative = sum_opt importance.negative sum_importance.negative
+          }
+      ) feature_id_to_importance
+        { unsigned = None; positive = None; negative = None }
 
-  in
+    in
 
-  let sum_unsigned, sum_positive, sum_negative =
-    match sum_importance with
-      | { unsigned = Some u; positive = Some p; negative = Some n } -> u, p, n
-      | _ ->
-        (* in a valid model, we must have at least one positive and
-           one negative leaf *)
-        assert false
-  in
-
-  (* normalize *)
-  let feature_id_to_importance = Utils.IntMap.map (
-      fun importance ->
-        { unsigned = div_opt importance.unsigned sum_unsigned;
-          positive = div_opt importance.positive sum_positive;
-          negative = div_opt importance.negative sum_negative
-        }
-    ) feature_id_to_importance
-  in
-
-  (* convert to list *)
-  let feature_id_to_importance = Utils.IntMap.fold (
-    fun feature_id importance accu ->
-      (feature_id, importance) :: accu
-  ) feature_id_to_importance [] in
-
-  (* sort by unsigned score *)
-  List.sort (
-    fun (_, { unsigned = u1o }) (_, { unsigned = u2o }) ->
-      match u1o, u2o with
-        | Some u1, Some u2 ->
-          Pervasives.compare u2 u1 (* descending *)
+    let sum_unsigned, sum_positive, sum_negative =
+      match sum_importance with
+        | { unsigned = Some u; positive = Some p; negative = Some n } -> u, p, n
         | _ ->
-          assert false (* in a valid model, every feature must have at least one leaf *)
-  ) feature_id_to_importance
+          (* in a valid model, we must have at least one positive and
+             one negative leaf *)
+          assert false
+    in
+
+    (* normalize *)
+    let feature_id_to_importance = Utils.IntMap.map (
+        fun importance ->
+          { unsigned = div_opt importance.unsigned sum_unsigned;
+            positive = div_opt importance.positive sum_positive;
+            negative = div_opt importance.negative sum_negative
+          }
+      ) feature_id_to_importance
+    in
+
+    (* convert to list *)
+    let feature_id_to_importance = Utils.IntMap.fold (
+        fun feature_id importance accu ->
+          (feature_id, importance) :: accu
+      ) feature_id_to_importance [] in
+
+    (* sort by unsigned score *)
+    List.sort (
+      fun (_, { unsigned = u1o }) (_, { unsigned = u2o }) ->
+        match u1o, u2o with
+          | Some u1, Some u2 ->
+            Pervasives.compare u2 u1 (* descending *)
+          | _ ->
+            (* in a valid model, every feature must have at least one
+               leaf *)
+            assert false
+    ) feature_id_to_importance
 
 
 let main model_file_path =
