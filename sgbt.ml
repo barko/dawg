@@ -47,6 +47,9 @@ type t = {
   (* what fold does each observation in the training set belong
      to? *)
   folds : int array;
+
+  (* Initial model to boost *)
+  boost_featureid_opt : int option;
 }
 
 let exceed_max_trees num_iters max_trees_opt =
@@ -199,10 +202,37 @@ and cut_learning_rate conf t iteration =
   } in
   learn_with_fold_rate conf t iteration
 
+let boost_feature_opt conf feature_map =
+  match conf.boost_feature_opt with
+  | None -> None
+  | Some boost_feature ->
+    match Feat_map.find feature_map boost_feature with
+    | [] ->
+      pr "feature %S to be used for boost not found\n%!"
+        (Feat_utils.string_of_feature_descr boost_feature);
+      exit 1
+
+    | [i_boost_feature] ->
+      let feature_id = match i_boost_feature with
+        | `Cat _ ->
+          pr "categorical feature %s cannot be used as the boost feature"
+            (Feat_utils.string_of_feature_descr boost_feature);
+          exit 1
+        | `Ord { Dog_t.o_feature_id } -> o_feature_id
+      in Some feature_id
+
+    | l ->
+      pr "more than one boost feature found: %d\n%!" (List.length l);
+      exit 1
+
 let learn_with_fold conf t fold initial_learning_rate deadline =
   let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
 
-  let first_tree = t.splitter#first_tree fold_set in
+  let first_tree = match t.boost_featureid_opt with
+    | None -> t.splitter#first_tree fold_set
+    | Some featureid ->
+      `LinearNode { Model_t.ln_feature_id = featureid; ln_coef = 1.0 }
+  in
   reset t first_tree;
 
   let { Loss.s_wrk; s_val; val_loss = first_val_loss } =
@@ -302,23 +332,6 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
                 ) feature_map fold_features  in
               folds, feature_map
 
-let boost_feature_opt conf sampler feature_map n y_feature_id =
-  match conf.boost_feature_opt with
-  | None -> None
-  | Some boost_feature ->
-    match Feat_map.find feature_map boost_feature with
-    | [] ->
-      pr "feature %S to be used for boost not found\n%!"
-        (Feat_utils.string_of_feature_descr boost_feature);
-      exit 1
-
-    | [i_boost_feature] ->
-      Some(Feat_map.i_to_a feature_map i_boost_feature)
-
-    | l ->
-      pr "more than one boost feature found: %d\n%!" (List.length l);
-      exit 1
-
 
 let learn conf =
   let dog_reader = Dog_io.RO.create conf.dog_file_path in
@@ -417,13 +430,16 @@ let learn conf =
 
   let eval = Tree.mk_eval num_observations in
 
+  let boost_featureid_opt = boost_feature_opt conf feature_map in
+
   let t = {
     n;
     feature_map;
     splitter;
     eval;
     sampler;
-    folds
+    folds;
+    boost_featureid_opt;
   } in
 
   let rec loop fold trees_list initial_learning_rate =
