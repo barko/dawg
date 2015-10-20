@@ -83,7 +83,7 @@ let update_importance branch branch_size leaf feature_id_to_importance =
 
     ) feature_id_to_importance branch
 
-let rec fold_tree f branch branch_size x = function
+let rec fold_tree_leaves f branch branch_size x = function
   | `Leaf value ->
     let x = f branch branch_size value x in
     x
@@ -102,17 +102,20 @@ let rec fold_tree f branch branch_size x = function
 
     let branch = feature_id :: branch in
     let branch_size = branch_size + 1 in
-    let x = fold_tree f branch branch_size x left_tree in
-    let x = fold_tree f branch branch_size x right_tree in
+    let x = fold_tree_leaves f branch branch_size x left_tree in
+    let x = fold_tree_leaves f branch branch_size x right_tree in
     x
 
-let fold_tree f x0 tree =
-  fold_tree f [] 0 x0 tree
+  (* For simplicity's sake we assign an importance of zero to linear nodes. *)
+  | `LinearNode (_ : linear_node) -> x
+
+let fold_tree_leaves f x0 tree =
+  fold_tree_leaves f [] 0 x0 tree
 
 let importance_of_features trees =
   let feature_id_to_importance = List.fold_left (
       fun feature_id_to_importance tree ->
-        fold_tree update_importance feature_id_to_importance tree
+        fold_tree_leaves update_importance feature_id_to_importance tree
     ) Utils.IntMap.empty trees in
 
   if Utils.IntMap.is_empty feature_id_to_importance then

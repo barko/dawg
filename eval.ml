@@ -28,7 +28,7 @@ let in_0_1_opt = function
   | Some v -> in_0_1 v
 
 let rec eval_tree get branch branch_size = function
-  | `Leaf value -> value, branch, branch_size
+  | `Leaf gamma -> gamma, branch, branch_size
   | `OrdinalNode { on_feature_id; on_split; on_left_tree; on_right_tree } ->
     assert ( on_feature_id >= 0 );
     let value =
@@ -62,6 +62,18 @@ let rec eval_tree get branch branch_size = function
         | `Right -> cn_right_tree
     in
     eval_tree get (cn_feature_id :: branch) (branch_size + 1) sub_tree
+
+  | `LinearNode { ln_feature_id; ln_coef } ->
+    assert ( ln_feature_id >= 0 );
+    let value =
+      match get `Ord ln_feature_id with
+        | `Float value -> value
+        | `String _ -> assert false (* type mismatch would have been raised *)
+    in
+    let gamma = ln_coef *. value in
+    let branch = ln_feature_id :: branch in
+    let branch_size = branch_size + 1 in
+    gamma, branch, branch_size
 
 let eval_tree get tree =
   eval_tree get [] 0 tree

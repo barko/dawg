@@ -214,7 +214,7 @@ and make m depth in_subset =
 
 (* partially evaluate a tree when the value of feature with id
    [feature_id] is [value] *)
-let rec eval_partially_1 feature_id value = function
+let rec eval_partially_1 feature_id value_index value = function
   | `OrdinalNode {
       on_split;
       on_left_tree;
@@ -223,16 +223,16 @@ let rec eval_partially_1 feature_id value = function
     } ->
     if on_feature_id = feature_id then
       let sub_tree =
-        if value <= on_split then
+        if value_index <= on_split then
           on_left_tree
         else
           on_right_tree
       in
-      eval_partially_1 feature_id value sub_tree
+      eval_partially_1 feature_id value_index value sub_tree
     else
       (* create a new tree, the result of simplifying each subtree *)
-      let on_left_tree  = eval_partially_1 feature_id value on_left_tree in
-      let on_right_tree = eval_partially_1 feature_id value on_right_tree in
+      let on_left_tree  = eval_partially_1 feature_id value_index value on_left_tree in
+      let on_right_tree = eval_partially_1 feature_id value_index value on_right_tree in
       `OrdinalNode { on_split; on_left_tree; on_right_tree; on_feature_id }
 
   | `CategoricalNode {
@@ -243,21 +243,31 @@ let rec eval_partially_1 feature_id value = function
     } ->
     if cn_feature_id = feature_id then
       let sub_tree =
-        match cn_category_directions.(value) with
+        match cn_category_directions.(value_index) with
           | `Left -> cn_left_tree
           | `Right -> cn_right_tree
       in
-      eval_partially_1 feature_id value sub_tree
+      eval_partially_1 feature_id value_index value sub_tree
     else
-      let cn_left_tree  = eval_partially_1 feature_id value cn_left_tree in
-      let cn_right_tree = eval_partially_1 feature_id value cn_right_tree in
+      let cn_left_tree  = eval_partially_1 feature_id value_index value cn_left_tree in
+      let cn_right_tree = eval_partially_1 feature_id value_index value cn_right_tree in
       `CategoricalNode {
         cn_category_directions;
         cn_left_tree;
         cn_right_tree;
         cn_feature_id
       }
-
+  | (`LinearNode { ln_feature_id; ln_coef }) as ln ->
+    if ln_feature_id = feature_id then
+      let float_value = match value with
+        | `Float float -> float
+        | `Int int -> float int
+        | `Cat cat ->
+          Printf.eprintf "[ERROR] in evaluating linear term: found categorical value %s\n%!" cat;
+          exit 1
+      in
+      `Leaf (float_value *. ln_coef)
+    else ln
   | (`Leaf _) as leaf -> leaf
 
 
@@ -265,13 +275,29 @@ let is_leaf = function
   | `Leaf _ -> true
   | _ -> false
 
-let eval_partially trees cardinality feature_id = function
+let feature_values a_feature = match a_feature with
+  | `Cat { Dog_t.c_categories } -> `Cat (Array.of_list c_categories)
+  | `Ord { Dog_t.o_breakpoints } ->
+    match o_breakpoints with
+    | `Int ints -> `Int (Array.of_list ints)
+    | `Float floats -> `Float (Array.of_list floats)
+
+let get_feature_value values value_index =
+  match values with
+  | `Float floats -> `Float (floats.(value_index))
+  | `Int ints -> `Int (ints.(value_index))
+  | `Cat cats -> `Cat (cats.(value_index))
+
+let eval_partially a_feature trees cardinality feature_id vector =
+  let values = feature_values a_feature in
+  match vector with
   | `Dense v ->
     let width_num_bytes = Utils.num_bytes cardinality in
     let num_leaves = ref 0 in
     Dense.iter ~width:width_num_bytes v (
-      fun ~index ~value ->
-        let tree = eval_partially_1 feature_id value trees.(index) in
+      fun ~index ~value:value_index ->
+        let value = get_feature_value values value_index in
+        let tree = eval_partially_1 feature_id value_index value trees.(index) in
         trees.(index) <- tree;
 
         match tree with
@@ -283,9 +309,10 @@ let eval_partially trees cardinality feature_id = function
   | `RLE v ->
     let num_leaves = ref 0 in
     Rlevec.iter v (
-      fun ~index ~length ~value ->
+      fun ~index ~length ~value:value_index ->
         for i = index to index + length - 1 do
-          trees.(i) <- eval_partially_1 feature_id value trees.(i);
+          let value = get_feature_value values value_index in
+          trees.(i) <- eval_partially_1 feature_id value_index value trees.(i);
           match trees.(i) with
             | `Leaf _ -> incr num_leaves
             | _ -> ()
@@ -309,6 +336,9 @@ let rec add_feature_id_to_set set = function
     let set = add_feature_id_to_set set cn_left_tree in
     let set = add_feature_id_to_set set cn_right_tree in
     IntSet.add cn_feature_id set
+
+  | `LinearNode { ln_feature_id } ->
+    IntSet.add ln_feature_id set
 
 let feature_id_set_of_tree tree =
   add_feature_id_to_set IntSet.empty tree
@@ -341,8 +371,9 @@ let mk_eval num_observations =
         let open Dog_t in
         let cardinality = Feat_utils.cardinality_of_feature a_feature in
         let vector = Feat_utils.vector_of_feature a_feature in
-        let num_leaves_new = eval_partially gamma_leaf cardinality
-            feature_id vector in
+        let num_leaves_new =
+          eval_partially a_feature gamma_leaf cardinality feature_id vector
+        in
         assert ( num_leaves_new >= !num_leaves );
         num_leaves := num_leaves_new
 
@@ -353,6 +384,7 @@ let mk_eval num_observations =
         | `Leaf g ->  gamma.(i) <- g
         | `OrdinalNode _
         | `CategoricalNode _ -> assert false
+        | `LinearNode _ -> assert false
     done;
     gamma
 
@@ -369,3 +401,6 @@ let rec shrink alpha = function
     let on_left_tree = shrink alpha on.on_left_tree in
     let on_right_tree = shrink alpha on.on_right_tree in
     `OrdinalNode { on with on_left_tree; on_right_tree }
+
+  | `LinearNode ln ->
+    `LinearNode { ln with ln_coef = alpha *. ln.ln_coef }

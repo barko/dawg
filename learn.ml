@@ -49,6 +49,8 @@ let learn
     num_folds
     fold_feature_name_opt
     fold_feature_id_opt
+    boost_feature_name_opt
+    boost_feature_id_opt
     convergence_rate_smoother_forgetful_factor
     deadline
     output_file_path
@@ -147,6 +149,9 @@ let learn
   let fold_feature_opt =
     feature_descr_of_args fold_feature_name_opt fold_feature_id_opt
   in
+  let boost_feature_opt =
+    feature_descr_of_args boost_feature_name_opt boost_feature_id_opt
+  in
 
   let binarization_threshold_opt =
     match lte_binarization_threshold, gte_binarization_threshold with
@@ -217,6 +222,7 @@ let learn
       output_file_path;
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
+      boost_feature_opt;
       max_trees_opt;
       binarization_threshold_opt;
       feature_monotonicity;
@@ -299,6 +305,18 @@ let commands =
                  learning." in
       Arg.(value & opt (some int) None &
            info ["f-id";"fold-feature-id"] ~docv:"INT" ~doc )
+    in
+
+    let boost_feature_name =
+      let doc = "Use this feature as the initial model, which EigenDog will boost." in
+      Arg.(value & opt (some string) None &
+           info ["b";"boost-feature-name"] ~docv:"STRING" ~doc )
+    in
+
+    let boost_feature_id =
+      let doc = "Use this feature as the initial model, which EigenDog will boost." in
+      Arg.(value & opt (some int) None &
+           info ["b-id";"boost-feature-id"] ~docv:"INT" ~doc )
     in
 
     let feature_name_positive =
@@ -399,6 +417,8 @@ let commands =
             num_folds $
             fold_feature_name $
             fold_feature_id $
+            boost_feature_name $
+            boost_feature_id $
             convergence_rate_smoother_forgetful_factor $
             deadline $
             output_file_path $

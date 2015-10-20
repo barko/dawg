@@ -97,7 +97,7 @@ let rec tree_l_to_c id_to_breakpoints = function
       cn_left_tree;
       cn_right_tree
     }
-
+  | (`LinearNode _) as ln -> ln
   | (`Leaf _) as leaf -> leaf
 
 
@@ -114,6 +114,11 @@ let rec add_features_of_tree feature_set map = function
     let map = Utils.IntMap.add on_feature_id feature map in
     let map = add_features_of_tree feature_set map on_left_tree in
     let map = add_features_of_tree feature_set map on_right_tree in
+    map
+
+  | `LinearNode { ln_feature_id } ->
+    let feature = Feat_map.i_find_by_id feature_set ln_feature_id in
+    let map = Utils.IntMap.add ln_feature_id feature map in
     map
 
   | `Leaf _ -> map
@@ -161,6 +166,8 @@ let rec tree_rle_to_array = function
     let on_left_tree = tree_rle_to_array on_left_tree in
     let on_right_tree = tree_rle_to_array on_right_tree in
     `OrdinalNode { on_feature_id; on_split; on_left_tree; on_right_tree }
+
+  | (`LinearNode _) as ln -> ln
 
 let rle_to_array trees =
   List.rev_map tree_rle_to_array trees

@@ -14,6 +14,7 @@ type conf = {
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
+  boost_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;

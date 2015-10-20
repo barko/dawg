@@ -20,6 +20,7 @@ type conf = {
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
+  boost_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;
@@ -300,6 +301,23 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
                     Feat_map.remove feature_map_0 fold_feature_id
                 ) feature_map fold_features  in
               folds, feature_map
+
+let boost_feature_opt conf sampler feature_map n y_feature_id =
+  match conf.boost_feature_opt with
+  | None -> None
+  | Some boost_feature ->
+    match Feat_map.find feature_map boost_feature with
+    | [] ->
+      pr "feature %S to be used for boost not found\n%!"
+        (Feat_utils.string_of_feature_descr boost_feature);
+      exit 1
+
+    | [i_boost_feature] ->
+      Some(Feat_map.i_to_a feature_map i_boost_feature)
+
+    | l ->
+      pr "more than one boost feature found: %d\n%!" (List.length l);
+      exit 1
 
 
 let learn conf =
