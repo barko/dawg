@@ -1,4 +1,6 @@
 # setenv( OCAMLPATH, /home/mika/edog/dawg )
+.SUBDIRS: csv
+
 USE_OCAMLFIND = true
 
 NATIVE_ENABLED = true
@@ -17,7 +19,9 @@ OCAMLPACKS[] +=
   cmdliner
   pcre
   mikmatch_pcre
-  csv
+
+OCAMLINCLUDES[] += csv
+OCAML_LIBS=csv/csv
 
 tS_t.mli tS_b.mli tS_t.ml tS_b.ml: tS.atd
         atdgen -t $<
@@ -97,8 +101,7 @@ section
   OCAMLFINDFLAGS[]=
   utils.cmo utils.cmi utils.cmx utils.o : utils.ml utils.mli
 
-
-.DEFAULT: \
+TARGETS = \
    $(OCamlProgram dawg , $(FILES) ) \
    $(OCamlProgram t_rlevec , test_rlevec $(FILES) ) \
    $(OCamlProgram t_sm , test_stream_merge stream_merge heap ) \
@@ -108,6 +111,9 @@ section
    $(OCamlProgram wcli, wcli lwt_queue lP_tcp \
                         proto_b proto_t proto_j \
                         dog_b dog_t dog_j )
+
+
+.DEFAULT: $(TARGETS)
 
 .PHONY: clean
 
