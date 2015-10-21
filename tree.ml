@@ -265,6 +265,9 @@ let rec eval_partially_1 feature_id value_index value = function
         | `Cat cat ->
           Printf.eprintf "[ERROR] in evaluating linear term: found categorical value %s\n%!" cat;
           exit 1
+        | `CatAnon ->
+          Printf.eprintf "[ERROR] in evaluating linear term: found anonymous categorical value\n%!";
+          exit 1
       in
       `Leaf (float_value *. ln_coef)
     else ln
@@ -276,7 +279,10 @@ let is_leaf = function
   | _ -> false
 
 let feature_values a_feature = match a_feature with
-  | `Cat { Dog_t.c_categories } -> `Cat (Array.of_list c_categories)
+  | `Cat { Dog_t.c_categories; c_anonymous_category = None } ->
+    `Cat (Array.of_list c_categories)
+  | `Cat { Dog_t.c_categories; c_anonymous_category = Some anon_id } ->
+    `CatAnon (Array.of_list c_categories, anon_id)
   | `Ord { Dog_t.o_breakpoints } ->
     match o_breakpoints with
     | `Int ints -> `Int (Array.of_list ints)
@@ -287,6 +293,11 @@ let get_feature_value values value_index =
   | `Float floats -> `Float (floats.(value_index))
   | `Int ints -> `Int (ints.(value_index))
   | `Cat cats -> `Cat (cats.(value_index))
+  | `CatAnon(categories, anon_value) ->
+    let cat = Feat_utils.string_opt_of_int ~categories ~anon_value value_index in
+    match cat with
+    | Some s -> `Cat s
+    | None -> `CatAnon
 
 let eval_partially a_feature trees cardinality feature_id vector =
   let values = feature_values a_feature in
