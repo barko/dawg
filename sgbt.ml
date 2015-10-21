@@ -149,7 +149,7 @@ let rec learn_with_fold_rate conf t iteration =
             convergence_rate_hat;
 
           if has_converged then (
-            pr "converged: metrics inidicate continuing is pointless\n";
+            pr "converged: metrics indicate continuing is pointless\n";
             `Converged (iteration.learning_rate, iteration.trees)
           )
           else if val_loss >= 2.0 *. iteration.prev_loss then (

@@ -52,6 +52,9 @@ let probability f =
   let ef2 = exp f2 in
   1. /. ( 1. +. ef2 )
 
+let logistic p =
+  log(p /. (1.0 -. p))
+
 
 type metrics = {
   n : int;
