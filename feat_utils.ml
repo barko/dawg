@@ -172,8 +172,8 @@ let folds_of_feature ~n ~num_folds = function
       `Folds folds
 
   | `Cat { c_cardinality; c_vector } ->
-    if c_cardinality <> num_folds then
-      `CategoricalCardinalityMismatch c_cardinality
+    if c_cardinality < num_folds then
+      `TooManyCategoricalFolds c_cardinality
     else
       let folds = Array.make n (-1) in
       (match c_vector with
@@ -181,7 +181,7 @@ let folds_of_feature ~n ~num_folds = function
           Rlevec.iter rle (
             fun ~index ~length ~value ->
               for i = index to index + length - 1 do
-                folds.(i) <- value
+                folds.(i) <- value mod num_folds
               done
           );
 
@@ -189,7 +189,7 @@ let folds_of_feature ~n ~num_folds = function
           let width_num_bytes = Utils.num_bytes c_cardinality in
           Dense.iter ~width:width_num_bytes vec (
             fun ~index ~value ->
-              folds.(index) <- value
+              folds.(index) <- value mod num_folds
           )
       );
       `Folds folds

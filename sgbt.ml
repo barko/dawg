@@ -276,16 +276,16 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
           let a_fold_feature = Feat_map.i_to_a feature_map i_fold_feature in
           match Feat_utils.folds_of_feature ~n ~num_folds:conf.num_folds
                   a_fold_feature with
-            | `TooManyOrdinalFolds cardinality ->
-              pr "the cardinality of ordinal feature %s is %d, which is \
-                  too large relative to the number of folds %d\n%!"
+            | `TooManyCategoricalFolds cardinality ->
+              pr "the cardinality of categorical feature %s is %d, which is \
+                  too small relative to the number of folds %d\n%!"
                 (Feat_utils.string_of_feature_descr fold_feature)
                 cardinality conf.num_folds;
               exit 1
 
-            | `CategoricalCardinalityMismatch cardinality ->
-              pr "the cardinality of the categorical feature %s (%d) must \
-                  equal the number of folds (%d)\n%!"
+            | `TooManyOrdinalFolds cardinality ->
+              pr "the cardinality of ordinal feature %s is %d, which is \
+                  too small relative to the number of folds %d\n%!"
                 (Feat_utils.string_of_feature_descr fold_feature)
                 cardinality conf.num_folds;
               exit 1
