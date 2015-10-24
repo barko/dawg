@@ -106,13 +106,15 @@ let rec learn_with_fold_rate conf t iteration =
     splitter = t.splitter
   } in
 
-  (* draw a random subset of this fold *)
-  Sampler.shuffle t.sampler iteration.random_state;
-  let sub_set = Sampler.array (
-      fun ~index ~value ->
-        (* sample half the data that is also in the current fold *)
-        iteration.fold_set.(index) && value mod 2 = 0
-    ) t.sampler in
+  (* (\* draw a random subset of this fold *\) *)
+  (* Sampler.shuffle t.sampler iteration.random_state; *)
+  (* let sub_set = Sampler.array ( *)
+  (*     fun ~index ~value -> *)
+  (*       (\* sample half the data that is also in the current fold *\) *)
+  (*       iteration.fold_set.(index) && value mod 2 = 0 *)
+  (*   ) t.sampler in *)
+
+  let sub_set = iteration.fold_set in
 
   match Tree.make m 0 sub_set with
     | None ->
