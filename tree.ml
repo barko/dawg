@@ -93,17 +93,17 @@ let best_split_of_features m =
       in
       let s_opt = m.splitter#best_split monotonicity feature in
       match best_opt, s_opt with
-        | Some (_, best_loss, best_split), Some (loss, split) ->
+        | Some (_, best_loss, best_split, monotonicity), Some (loss, split) ->
 
           if best_loss < loss then
             (* still superior *)
             best_opt
           else
             (* new champ *)
-            Some (feature, loss, split)
+            Some (feature, loss, split, monotonicity)
         | None, Some (loss, split) ->
           (* first guy's always champ *)
-          Some (feature, loss, split)
+          Some (feature, loss, split, monotonicity)
 
         | Some _, None -> best_opt
         | None, None -> None
@@ -164,9 +164,9 @@ and make m depth in_subset =
     | None -> None
 
     | Some split ->
-      let splitting_feature, loss, split = split in
+      let splitting_feature, loss, split, monotonicity = split in
 
-      if depth + 1 >= m.max_depth then
+      if depth + 1 >= m.max_depth || monotonicity <> `Arbitrary then
         terminate split
 
       else
