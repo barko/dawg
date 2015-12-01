@@ -11,8 +11,8 @@ val cardinality_of_feature : ('a, 'b) feature -> int
 val vector_of_feature : ('a, 'b) feature -> ('a, 'b) Dog_t.vector
 
 val folds_of_feature : n:int -> num_folds:int -> Feat.afeature ->
-  [ `CategoricalCardinalityMismatch of int
-  | `Folds of int array
+  [ `Folds of int array
+  | `TooManyCategoricalFolds of int
   | `TooManyOrdinalFolds of int
   ]
 (* [folds_of_feature ~n:num_observations ~num_folds feature] returns
