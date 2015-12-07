@@ -20,6 +20,7 @@ type conf = {
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
+  boost_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;
@@ -46,6 +47,9 @@ type t = {
   (* what fold does each observation in the training set belong
      to? *)
   folds : int array;
+
+  (* Initial model to boost *)
+  boost_featureid_opt : int option;
 }
 
 let exceed_max_trees num_iters max_trees_opt =
@@ -102,13 +106,15 @@ let rec learn_with_fold_rate conf t iteration =
     splitter = t.splitter
   } in
 
-  (* draw a random subset of this fold *)
-  Sampler.shuffle t.sampler iteration.random_state;
-  let sub_set = Sampler.array (
-      fun ~index ~value ->
-        (* sample half the data that is also in the current fold *)
-        iteration.fold_set.(index) && value mod 2 = 0
-    ) t.sampler in
+  (* (\* draw a random subset of this fold *\) *)
+  (* Sampler.shuffle t.sampler iteration.random_state; *)
+  (* let sub_set = Sampler.array ( *)
+  (*     fun ~index ~value -> *)
+  (*       (\* sample half the data that is also in the current fold *\) *)
+  (*       iteration.fold_set.(index) && value mod 2 = 0 *)
+  (*   ) t.sampler in *)
+
+  let sub_set = iteration.fold_set in
 
   match Tree.make m 0 sub_set with
     | None ->
@@ -145,7 +151,7 @@ let rec learn_with_fold_rate conf t iteration =
             convergence_rate_hat;
 
           if has_converged then (
-            pr "converged: metrics inidicate continuing is pointless\n";
+            pr "converged: metrics indicate continuing is pointless\n";
             `Converged (iteration.learning_rate, iteration.trees)
           )
           else if val_loss >= 2.0 *. iteration.prev_loss then (
@@ -198,10 +204,37 @@ and cut_learning_rate conf t iteration =
   } in
   learn_with_fold_rate conf t iteration
 
+let boost_feature_opt conf feature_map =
+  match conf.boost_feature_opt with
+  | None -> None
+  | Some boost_feature ->
+    match Feat_map.find feature_map boost_feature with
+    | [] ->
+      pr "feature %S to be used for boost not found\n%!"
+        (Feat_utils.string_of_feature_descr boost_feature);
+      exit 1
+
+    | [i_boost_feature] ->
+      let feature_id = match i_boost_feature with
+        | `Cat _ ->
+          pr "categorical feature %s cannot be used as the boost feature"
+            (Feat_utils.string_of_feature_descr boost_feature);
+          exit 1
+        | `Ord { Dog_t.o_feature_id } -> o_feature_id
+      in Some feature_id
+
+    | l ->
+      pr "more than one boost feature found: %d\n%!" (List.length l);
+      exit 1
+
 let learn_with_fold conf t fold initial_learning_rate deadline =
   let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
 
-  let first_tree = t.splitter#first_tree fold_set in
+  let first_tree = match t.boost_featureid_opt with
+    | None -> t.splitter#first_tree fold_set
+    | Some featureid ->
+      `LinearNode { Model_t.ln_feature_id = featureid; ln_coef = 1.0 }
+  in
   reset t first_tree;
 
   let { Loss.s_wrk; s_val; val_loss = first_val_loss } =
@@ -399,13 +432,16 @@ let learn conf =
 
   let eval = Tree.mk_eval num_observations in
 
+  let boost_featureid_opt = boost_feature_opt conf feature_map in
+
   let t = {
     n;
     feature_map;
     splitter;
     eval;
     sampler;
-    folds
+    folds;
+    boost_featureid_opt;
   } in
 
   let rec loop fold trees_list initial_learning_rate =

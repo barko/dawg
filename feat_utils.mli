@@ -1,3 +1,4 @@
+val string_opt_of_int : categories:'a array -> anon_value:int -> int -> 'a option
 val array_of_afeature : Feat.afeature ->
   [ `Float of (int * float) array
   | `Int of (int * int) array

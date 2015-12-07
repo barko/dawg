@@ -59,7 +59,8 @@ let rec category_direction_ids_of_tree next_id category_directions_to_id =
         cn_left_tree;
         cn_right_tree }, next_id, category_directions_to_id
 
-    | `Leaf leaf -> `Leaf leaf, next_id, category_directions_to_id
+    | (`LinearNode _) as ln -> ln, next_id, category_directions_to_id
+    | (`Leaf _) as leaf -> leaf, next_id, category_directions_to_id
 
 let category_direction_ids_of_trees trees =
   let trees, next_id, category_directions_to_id = List.fold_left (
@@ -99,6 +100,11 @@ let rec py_code_of_tree = function
       `Line "else:";
       `Block [py_code_of_tree cn_right_tree];
     ]
+
+  | `LinearNode {
+      ln_feature_id;
+      ln_coef } ->
+    `Line (sp "r += ord_%d * %.17g" ln_feature_id ln_coef);
 
   | `Leaf leaf ->
     `Line (sp "r += %.17g" leaf)

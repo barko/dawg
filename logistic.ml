@@ -5,26 +5,27 @@ type binarization_threshold = [
   | `GTE of float (* positive label is GTE, negative case is LT *)
 ]
 
-let logit ~f ~y =
+let logit_loss ~f ~y =
 
-  let f2 = -2.0 *. f in
-  let ef2 = exp f2 in (* $\exp (-2 f)$ *)
+  (* let f2 = -2.0 *. f in *)
+  (* let ef2 = exp f2 in (\* $\exp (-2 f)$ *\) *)
 
-  (* $\exp( -2 y f ) = (\exp (-2 f))^y $ *)
-  let e =
-    if y = 1.0 then
-      ef2
-    else
-      (1. /. ef2)
-  in
+  (* (\* $\exp( -2 y f ) = (\exp (-2 f))^y $ *\) *)
+  (* let e = *)
+  (*   if y = 1.0 then *)
+  (*     ef2 *)
+  (*   else *)
+  (*     (1. /. ef2) *)
+  (* in *)
+  let y2f = -2.0 *. y *. f in
+  let e = exp y2f in
 
-  let y2f = y *. f2 in
   let loss =
     (* $\log(1 + \exp x)) = x$ as $x \rightarrow \infinity$ *)
     if y2f > 35.0 then
       y2f
     else
-      log ( 1.0 +. e )
+      log1p e
   in
 
   (* let p = 1. /. ( 1. +. ef2 ) in *)
@@ -51,6 +52,9 @@ let probability f =
   let f2 = -2.0 *. f in
   let ef2 = exp f2 in
   1. /. ( 1. +. ef2 )
+
+let logit p =
+  log(p /. (1.0 -. p)) /. 2.0
 
 
 type metrics = {
@@ -452,7 +456,7 @@ class splitter binarization_threshold_opt y_feature n =
           f.(i) <- f.(i) +. gamma_i;
 
           let li, zi, wi =
-            match logit ~f:f.(i) ~y:y.(i) with
+            match logit_loss ~f:f.(i) ~y:y.(i) with
               | `Number lzw -> lzw
               | `NaN ->
                 last_nan := Some i;

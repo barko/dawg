@@ -1,32 +1,31 @@
 open Dog_t
 
+let string_opt_of_int ~categories ~anon_value value =
+  let num_categories = Array.length categories + 1 in
+  if 0 <= value && value < anon_value then
+    Some categories.( value )
+  else if value = anon_value then (* anonymous *)
+    None
+  else if anon_value < value && value < num_categories then
+    Some categories.( value - 1 )
+  else
+    assert false
+
 let array_of_afeature = function
   | `Cat cat -> (
       let categories = Array.of_list cat.c_categories in
-      let num_categories = Array.length categories in
       match cat.c_anonymous_category with
         | Some anon_value -> (
 
-            let num_categories = num_categories + 1 in
-
-            let string_opt_of_int value =
-              if 0 <= value && value < anon_value then
-                Some categories.( value )
-              else if value = anon_value then (* anonymous *)
-                None
-              else if anon_value < value && value < num_categories then
-                Some categories.( value - 1 )
-              else
-                assert false
-            in
             match cat.c_vector with
               | `RLE (rle:Vec.t) ->
                 let result = Array.make rle.Vec.length (-1, None) in
                 Rlevec.iter rle (
                   fun ~index ~length ~value ->
-                    let string_opt = value, string_opt_of_int value in
+                    let string_opt =
+                      string_opt_of_int ~categories ~anon_value value in
                     for i = index to index + length - 1 do
-                      result.(i) <- string_opt
+                      result.(i) <- value, string_opt
                     done
                 );
                 `StringAnon result
@@ -36,7 +35,8 @@ let array_of_afeature = function
                 let width = Utils.num_bytes cat.c_cardinality in
                 Dense.iter ~width vec (
                   fun ~index ~value ->
-                    let string_opt = string_opt_of_int value in
+                    let string_opt =
+                      string_opt_of_int ~categories ~anon_value value in
                     result.(index) <- value, string_opt
                 );
                 `StringAnon result

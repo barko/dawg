@@ -28,7 +28,7 @@ let in_0_1_opt = function
   | Some v -> in_0_1 v
 
 let rec eval_tree get branch branch_size = function
-  | `Leaf value -> value, branch, branch_size
+  | `Leaf gamma -> gamma, branch, branch_size
   | `OrdinalNode { on_feature_id; on_split; on_left_tree; on_right_tree } ->
     assert ( on_feature_id >= 0 );
     let value =
@@ -62,6 +62,18 @@ let rec eval_tree get branch branch_size = function
         | `Right -> cn_right_tree
     in
     eval_tree get (cn_feature_id :: branch) (branch_size + 1) sub_tree
+
+  | `LinearNode { ln_feature_id; ln_coef } ->
+    assert ( ln_feature_id >= 0 );
+    let value =
+      match get `Ord ln_feature_id with
+        | `Float value -> value
+        | `String _ -> assert false (* type mismatch would have been raised *)
+    in
+    let gamma = ln_coef *. value in
+    let branch = ln_feature_id :: branch in
+    let branch_size = branch_size + 1 in
+    gamma, branch, branch_size
 
 let eval_tree get tree =
   eval_tree get [] 0 tree
@@ -253,6 +265,8 @@ let mk_get features header =
   in
   get, feature_id_to_feature_name
 
+let noop f = f
+
 let normal f =
   let probability = Logistic.probability f in
   probability
@@ -261,13 +275,16 @@ let invert f =
   let probability = Logistic.probability f in
   1. -. probability
 
-let noop f = f
+let normal_linear f = f
+
+let invert_linear f = ~-. f
 
 let model_eval
     model_file_path
     csv_file_path_opt
     prediction_file_path
     positive_category_opt
+    no_transform
     no_header
   =
 
@@ -288,13 +305,13 @@ let model_eval
             if positive_category = logistic.bi_positive_category then
               (* user requests the model's notion of positive; nothing to
                  do *)
-              normal
+              (if no_transform then normal_linear else normal)
             else
               match logistic.bi_negative_category_opt with
                 | Some neg_category ->
                   if neg_category = positive_category then
                     (* invert polarity *)
-                    invert
+                    (if no_transform then invert_linear else invert)
                   else (
                     pr "unknown target category %S\n%!" positive_category;
                     exit 1
@@ -447,6 +464,11 @@ let commands =
     Arg.(value & flag & info ["h";"no-header"] ~doc)
   in
 
+  let no_transform =
+    let doc = "Do not apply logistic transformation but output raw log-odds." in
+    Arg.(value & flag & info ["l";"log-odds"] ~doc)
+  in
+
   let eval_cmd =
     let doc = "evaluate a binary classification model on each \
                row of a csv file" in
@@ -455,6 +477,7 @@ let commands =
              csv_file_path $
              prediction_file_path $
              positive_category $
+             no_transform $
              no_header
          ),
     Term.info "eval" ~doc

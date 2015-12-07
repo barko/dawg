@@ -33,10 +33,16 @@ type ('a, 'b) ordinal_node = {
   right_tree : ('a, 'b) tree;
 } <ocaml field_prefix="on_">
 
+type linear_node = {
+  feature_id : int;
+  coef : float;
+} <ocaml field_prefix="ln_">
+
 type ('a, 'b) tree = [
   | Leaf of float
   | CategoricalNode of ('a, 'b) categorical_node
   | OrdinalNode of ('a, 'b) ordinal_node
+  | LinearNode of linear_node
 ]
 
 type category_direction = [ Left | Right ]
