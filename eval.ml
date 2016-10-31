@@ -328,12 +328,12 @@ let model_eval
         noop, square.re_trees, square.re_features
 
       | Some _, `Square square ->
-        pr "[WARNING] file %S contains a regression model, not a logistic model as \
+        epr "[WARNING] file %S contains a regression model, not a logistic model as \
             implied by the positive category argument\n%!" model_file_path;
         noop, square.re_trees, square.re_features
 
       | None, `Logistic _ ->
-        pr "[ERROR] file %S contains a logistic model, but no positive category was \
+        epr "[ERROR] file %S contains a logistic model, but no positive category was \
             provided\n%!" model_file_path;
         exit 1
   in

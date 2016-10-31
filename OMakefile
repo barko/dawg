@@ -88,6 +88,8 @@ FILES[] =
   roc
   square
   gen_code
+  gen_python
+  gen_c
   proto_t
   proto_b
   proto_j
