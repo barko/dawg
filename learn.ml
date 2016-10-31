@@ -119,6 +119,7 @@ let learn
     match excluded_feature_name_regexp with
       | Some re -> (
           try
+            pr "Exclude feature regexp: %S\n%!" re;
             Some (Pcre.regexp re)
           with Pcre.Error _ ->
             pr "bad regulalar expression %S" re;

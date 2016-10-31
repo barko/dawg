@@ -1,6 +1,7 @@
 (** Friedman's Stochastic Gradient Boosting Trees *)
 
 let pr = Printf.printf
+let epr = Printf.eprintf
 
 let random_seed = [| 9271 ; 12074; 3; 12921; 92; 763 |]
 
@@ -259,7 +260,7 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
         | fold_features ->
           let num_fold_features = List.length fold_features in
           if num_fold_features > 1 then
-            pr "warning: there are %d fold features satisfying %s\n%!"
+            pr "[WARNING] There are %d fold features satisfying %s\n%!"
               num_fold_features
               (Feat_utils.string_of_feature_descr fold_feature);
 
@@ -268,7 +269,7 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
           let i_fold_feature = List.hd fold_features in
           let fold_feature_id = Feat_utils.id_of_feature i_fold_feature in
           if fold_feature_id = y_feature_id then (
-            pr "fold feature and target feature must be different\n%!";
+            epr "[ERROR] Fold feature and target feature must be different\n%!";
             exit 1
           );
 
@@ -277,14 +278,14 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
           match Feat_utils.folds_of_feature ~n ~num_folds:conf.num_folds
                   a_fold_feature with
             | `TooManyCategoricalFolds cardinality ->
-              pr "the cardinality of categorical feature %s is %d, which is \
+              epr "[ERROR] The cardinality of categorical feature %s is %d, which is \
                   too small relative to the number of folds %d\n%!"
                 (Feat_utils.string_of_feature_descr fold_feature)
                 cardinality conf.num_folds;
               exit 1
 
             | `TooManyOrdinalFolds cardinality ->
-              pr "the cardinality of ordinal feature %s is %d, which is \
+              epr "[ERROR] The cardinality of ordinal feature %s is %d, which is \
                   too small relative to the number of folds %d\n%!"
                 (Feat_utils.string_of_feature_descr fold_feature)
                 cardinality conf.num_folds;
@@ -296,7 +297,16 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
                 List.fold_left (
                   fun feature_map_0 a_fold_feature ->
                     let fold_feature_id = Feat_utils.id_of_feature
-                        a_fold_feature in
+                      a_fold_feature in
+                    let fold_feature_name = Feat_utils.name_of_feature a_fold_feature in
+                    let () = match fold_feature_name with
+                      | Some name ->
+                        epr "[INFO] excluding fold feature %s (id: %d)\n%!"
+                          name fold_feature_id;
+                      | None ->
+                        epr "[INFO] excluding nameless fold feature (id: %d)\n%!"
+                          fold_feature_id;
+                    in
                     Feat_map.remove feature_map_0 fold_feature_id
                 ) feature_map fold_features  in
               folds, feature_map
