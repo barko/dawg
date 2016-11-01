@@ -241,7 +241,10 @@ let py_code_of_trees trees =
   ]
 
 let py_eval_function features trees model kind
-    ~input_file_path ~model_md5 ~function_name ~output_logodds =
+    ~input_file_path ~model_md5 ~function_name ~output_logodds
+    :
+    Atd_indent.t list
+    =
   let trees, category_directions_to_id =
     category_direction_ids_of_trees trees in
 

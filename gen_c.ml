@@ -215,7 +215,10 @@ let c_code_of_trees trees =
   ]
 
 let c_eval_function features trees model kind
-    ~input_file_path ~model_md5 ~function_name  ~output_logodds =
+    ~input_file_path ~model_md5 ~function_name ~modifiers ~output_logodds
+    :
+    Atd_indent.t list
+    =
   let trees, category_directions_to_id =
     category_direction_ids_of_trees trees in
 
@@ -274,6 +277,10 @@ let c_eval_function features trees model kind
       `Line (sp "// input file md5: %s" model_md5)
   ] in
 
+  let modifiers_string = match modifiers with
+    | None -> ""
+    | Some l -> (String.concat " " l) ^ " "
+  in
   [
     `Inline comments;
     empty_line;
@@ -283,7 +290,8 @@ let c_eval_function features trees model kind
     empty_line;
     `Inline (c_category_to_index_stmts features);
     empty_line;
-    `Line (Printf.sprintf "double %s( ARGS ) {" function_name);
+    `Line (Printf.sprintf "// modifiers: %s" modifiers_string);
+    `Line (Printf.sprintf "%sdouble %s( ARGS ) {" modifiers_string function_name);
     `Block (c_extract_feature_values features);
     c_code_of_trees trees;
     `Block [transform];
@@ -292,7 +300,7 @@ let c_eval_function features trees model kind
 
 
 let gen input_file_path output_file_path_opt function_name
-    positive_category_opt output_logodds =
+    positive_category_opt modifiers output_logodds =
   let model, model_md5 =
     let model_s = Mikmatch.Text.file_contents input_file_path in
     let model_md5 = Digest.(to_hex (string model_s)) in
@@ -341,7 +349,7 @@ let gen input_file_path output_file_path_opt function_name
           | None -> `Square
   in
   let code = c_eval_function features trees model kind
-      ~input_file_path ~model_md5 ~function_name ~output_logodds in
+      ~input_file_path ~model_md5 ~function_name ~modifiers ~output_logodds in
 
   let ouch =
     match output_file_path_opt with
@@ -368,7 +376,7 @@ let commands =
            info ["o";"output"] ~docv:"PATH" ~doc)
     in
     let function_name =
-      let doc = "name of C/C++ function to be generated" in
+      let doc = "name of C/C++ function to be generated. " in
       Arg.(value & opt string "model" &
            info ["f";"function"] ~docv:"STRING" ~doc)
     in
@@ -376,6 +384,12 @@ let commands =
       let doc = "the positive target class (implies logistic model)" in
       Arg.(value & opt (some string) None &
            info ["p";"positive"] ~docv:"STRING" ~doc)
+    in
+    let modifiers =
+      let doc = "C/C++ modifiers to be applied to this function definition.\
+          (E.g. static, inline, extern, virtual, ...)" in
+      Arg.(value & opt (some & list string) None &
+           info ["m";"modifier"] ~doc)
     in
     let output_logodds =
       let doc = "output is a log-odds value instead of a probability value" in
@@ -387,6 +401,7 @@ let commands =
             output_file_path $
             function_name $
             positive_category $
+            modifiers $
             output_logodds
     ),
     Term.info "c" ~doc
