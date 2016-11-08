@@ -3,6 +3,7 @@ module ISet = Utils.XSet(Utils.Int)
 module SSet = Utils.XSet(String)
 
 let pr fmt = Printf.printf (fmt ^^ "\n%!")
+let epr fmt = Printf.eprintf ("[ERROR]" ^^ fmt ^^ "\n%!")
 
 let seconds_of_string = function
   | RE (float as number : float ) ( 's' | 'S' ) -> (* seconds *)
@@ -22,7 +23,7 @@ let seconds_of_string = function
 let deadline_of_string str =
   match seconds_of_string str with
     | None ->
-      pr "%S is not a valid time-delta sepcifier" str;
+      epr "%S is not a valid time-delta sepcifier" str;
       exit 1
 
     | Some delta_seconds ->
@@ -33,7 +34,7 @@ let feature_descr_of_args name_opt id_opt =
   match name_opt, id_opt with
     | None, None -> None
     | Some _, Some _ ->
-      pr "can only specify the a feature by its name or its id, not both";
+      epr "can only specify the a feature by its name or its id, not both";
       exit 1
 
     | Some name, None -> Some (`Name name)
@@ -55,6 +56,7 @@ let learn
     excluded_feature_name_regexp
     loss_type_s
     max_trees_opt
+    max_gamma_opt
     lte_binarization_threshold
     gte_binarization_threshold
     feature_name_positive
@@ -64,28 +66,28 @@ let learn
   =
 
   if max_depth < 1 then (
-    pr "max-depth must be greater than 0";
+    epr "max-depth must be greater than 0";
     exit 1
   );
 
   if 0.0 >= initial_learning_rate || initial_learning_rate > 1.0 then (
-    pr "initial-learning-rate must be in (0,1]";
+    epr "initial-learning-rate must be in (0,1]";
     exit 1
   );
 
   if min_convergence_rate < 0.0 then (
-    pr "min-convergence-rate must be non-negative";
+    epr "min-convergence-rate must be non-negative";
     exit 1
   );
 
   if num_folds < 2 then (
-    pr "num-folds must be greater than one";
+    epr "num-folds must be greater than one";
     exit 1
   );
 
   if convergence_rate_smoother_forgetful_factor <= 0.0 ||     (* forget everything *)
      convergence_rate_smoother_forgetful_factor >= 1.0 then ( (* forget nothing *)
-    pr "forgetful-factor must be between 0 and 1, exclusive";
+    epr "forgetful-factor must be between 0 and 1, exclusive";
     exit 1
   );
 
@@ -93,8 +95,19 @@ let learn
     | None -> ()
     | Some max_trees ->
       if max_trees < 1 then (
-        pr "the maximum number of trees must be positive";
+        epr "the maximum number of trees must be positive";
         exit 1
+      )
+  );
+
+  (match max_gamma_opt with
+    | None -> ()
+    | Some max_gamma ->
+      if max_gamma <= 0.0 then (
+        epr "the maximum leaf gamma must be positive";
+        exit 1
+      ) else (
+        pr "[INFO] max-leaf-gamma = %f" max_gamma
       )
   );
 
@@ -105,13 +118,13 @@ let learn
   in
 
   if not (Sys.file_exists dog_file_path) then (
-    pr "file %S does not exist!" dog_file_path;
+    epr "file %S does not exist!" dog_file_path;
     exit 1
   );
 
   let output_dir_name = Filename.dirname output_file_path in
   if not (Sys.file_exists output_dir_name) then (
-    pr "output directory %S does not exist!" output_dir_name;
+    epr "output directory %S does not exist!" output_dir_name;
     exit 1
   );
 
@@ -122,7 +135,7 @@ let learn
             pr "Exclude feature regexp: %S\n%!" re;
             Some (Pcre.regexp re)
           with Pcre.Error _ ->
-            pr "bad regulalar expression %S" re;
+            epr "bad regulalar expression %S" re;
             exit 1
         )
       | None -> None
@@ -133,14 +146,14 @@ let learn
       | "logistic"-> `Logistic
       | "square" -> `Square
       | _ ->
-        pr "bad loss type %S" loss_type_s;
+        epr "bad loss type %S" loss_type_s;
         exit 1
   in
 
   let y =
     match feature_descr_of_args y_name_opt y_id_opt with
       | None ->
-        pr "no target feature specified";
+        epr "no target feature specified";
         exit 1
       | Some y -> y
   in
@@ -152,7 +165,7 @@ let learn
   let binarization_threshold_opt =
     match lte_binarization_threshold, gte_binarization_threshold with
       | Some _, Some _ ->
-        pr "cannot specify both -gte and -lte binarization";
+        epr "cannot specify both -gte and -lte binarization";
         exit 1
       | Some lte, None -> Some (`LTE lte)
       | None, Some gte -> Some (`GTE gte)
@@ -219,6 +232,7 @@ let learn
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
       max_trees_opt;
+      max_gamma_opt;
       binarization_threshold_opt;
       feature_monotonicity;
     }
@@ -228,13 +242,13 @@ let learn
     Sgbt.learn conf
   with
     | Loss.WrongTargetType ->
-      pr "target %s is not binary\n%!"
+      epr "target %s is not binary\n%!"
         (Feat_utils.string_of_feature_descr y);
       exit 1
     | Loss.BadTargetDistribution ->
-      pr "target %s has a bad distribution\n%!"
+      epr "target %s has a bad distribution\n%!"
         (Feat_utils.string_of_feature_descr y);
-
+      exit 1
 
 open Cmdliner
 let commands =
@@ -347,7 +361,7 @@ let commands =
           \"h\" hours, and \"d\" days.  For example, \"1.2h\" represents a deadline \
           of 1.2 hours (equivalently \"72m\") from now." in
       Arg.(value & opt (some string) None &
-           info ["t";"deadline"] ~docv:"DELTA-TIME" ~doc)
+           info ["T";"deadline"] ~docv:"DELTA-TIME" ~doc)
     in
 
     let output_file_path =
@@ -368,6 +382,13 @@ let commands =
                  classifier, or \"square\" for regression" in
       Arg.(value & opt string "logistic" &
            info ["l";"loss"] ~docv:"STRING" ~doc)
+    in
+
+    let max_leaf_gamma =
+      let doc = "the maximum absolute value of gamma allowed in a leaf node, \
+                 prior to rescaling it by the learning rate" in
+      Arg.( value & opt (some float) None &
+            info ["g";"max-leaf-gamma"] ~docv:"FLOAT" ~doc)
     in
 
     let max_trees =
@@ -406,6 +427,7 @@ let commands =
             excluded_feature_name_regexp $
             loss_type $
             max_trees $
+            max_leaf_gamma $
             binarize_lte $
             binarize_gte $
             feature_name_positive $

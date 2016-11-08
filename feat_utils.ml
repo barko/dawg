@@ -1,5 +1,17 @@
 open Dog_t
 
+let apply_max_gamma ~max_gamma gamma =
+  if gamma < 0.0 then
+    max gamma (~-. max_gamma)
+  else
+    min gamma max_gamma
+
+let apply_max_gamma_opt ~max_gamma_opt left right =
+  match max_gamma_opt with
+    | None -> left, right
+    | Some max_gamma ->
+      apply_max_gamma ~max_gamma left, apply_max_gamma ~max_gamma right
+
 let array_of_afeature = function
   | `Cat cat -> (
       let categories = Array.of_list cat.c_categories in
