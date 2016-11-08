@@ -2,6 +2,12 @@
 
 open Gen_code
 open Model_t
+open Trie
+
+let feature_name cf_feature_id cf_feature_name_opt =
+  match cf_feature_name_opt with
+  | Some feature_name -> feature_name
+  | None -> "_" ^ (string_of_int cf_feature_id)
 
 (* translate a single tree into a code block *)
 let rec c_code_of_tree = function
@@ -36,8 +42,8 @@ let rec c_code_of_tree = function
     `Line (sp "r += %.17g;" leaf)
 
 let string_of_direction = function
-  | `Left  -> "1 /* TRUE  */"
-  | `Right -> "0 /* FALSE */"
+  | `Left  -> "1"
+  | `Right -> "0"
 
 (* create a string consisting of comman seperated booleans ('1' or
    '0') , where each value answers 'go left?' *)
@@ -78,124 +84,105 @@ let c_extract_feature_values features =
               cf_feature_name_opt;
               cf_categories;
               cf_anonymous_category_index_opt
-            } -> failwith "unimplemented"
+            } ->
 
-            (* let feature_name = *)
-            (*   match cf_feature_name_opt with *)
-            (*     | Some feature_name -> feature_name *)
-            (*     | None -> raise (AnonymousFeature cf_feature_id) *)
-            (* in *)
-
-            (* match cf_anonymous_category_index_opt with *)
-            (*   | Some index -> *)
-            (*     `Inline [ *)
-            (*       (\* absence of a value in the python dictionary *)
-            (*          ["fv"] implicitly defines the value as [index] *\) *)
-            (*       `Line "try:"; *)
-            (*       `Block [ *)
-            (*         (\* find the category string *\) *)
-            (*         `Line (sp "cat_%d = fv[ '%s' ]" *)
-            (*                  cf_feature_id feature_name); *)
-            (*         `Line "try:"; *)
-            (*         `Block [ *)
-            (*           `Line (sp "cat_id_%d = cat_to_id_%d[ cat_%d ]" *)
-            (*                    cf_feature_id cf_feature_id cf_feature_id *)
-            (*                 ); *)
-            (*         ]; *)
-            (*         `Line "except KeyError:"; *)
-            (*         `Block [ *)
-            (*           `Line (sp "raise UnknownCategory( '%s', cat_%d )" *)
-            (*                    feature_name cf_feature_id ) *)
-            (*         ] *)
-            (*       ]; *)
-            (*       `Line "except KeyError:"; *)
-            (*       `Block [ *)
-            (*         (\* category string not found; use the anonymous *)
-            (*            category index as the default *\) *)
-            (*         `Line (sp "cat_id_%d = %d" cf_feature_id index) *)
-            (*       ]; *)
-            (*       empty_line *)
-            (*     ] *)
-
-            (*   | None -> *)
-            (*     (\* here, anonymous categories are not allowed *\) *)
-            (*     `Inline [ *)
-            (*       `Line "try:"; *)
-            (*       `Block [ *)
-            (*         `Line (sp "cat_%d = fv[ '%s' ]" *)
-            (*                  cf_feature_id feature_name); *)
-            (*         `Line "try:"; *)
-            (*         `Block [ *)
-            (*           `Line (sp "cat_id_%d = cat_to_id_%d[ cat_%d ]" *)
-            (*                    cf_feature_id cf_feature_id cf_feature_id *)
-            (*                 ); *)
-            (*         ]; *)
-            (*         `Line "except KeyError:"; *)
-            (*         `Block [ *)
-            (*           `Line (sp "raise UnknownCategory( '%s', cat_%d )" *)
-            (*                    feature_name cf_feature_id); *)
-            (*         ] *)
-            (*       ]; *)
-            (*       `Line "except KeyError:"; *)
-            (*       `Block [ *)
-            (*         `Line (sp "raise MissingCategoricalFeatureValue( '%s' )" *)
-            (*                  feature_name); *)
-            (*       ]; *)
-
-            (*       empty_line *)
-            (*     ] *)
-
+            let feature_name =
+              match cf_feature_name_opt with
+                | Some feature_name -> feature_name
+                | None -> raise (AnonymousFeature cf_feature_id)
+            in
+            match cf_anonymous_category_index_opt with
+              | Some anon_id ->
+                `Inline [
+                  (* absence of a value in the python dictionary
+                     ["fv"] implicitly defines the value as [anon_id] *)
+                  `Line (sp "char const * const cat_%d = (%s);"
+                           cf_feature_id feature_name);
+                  `Line (sp "int const cat_id_%d = (cat_%d) ? (cat_to_id_%d(cat_%d)):(%d);"
+                           cf_feature_id cf_feature_id cf_feature_id cf_feature_id anon_id);
+                  empty_line
+                ]
+              | None ->
+                (* here, anonymous categories are not allowed *)
+                `Inline [
+                  `Line (sp "char const * const cat_%d = (%s);"
+                           cf_feature_id feature_name);
+                  `Line (sp "int const cat_id_%d = cat_to_id_%d(cat_%d);"
+                           cf_feature_id cf_feature_id cf_feature_id);
+                  empty_line
+                ]
       in
       lines :: code
   ) [] features
+
+let rec izip i l =
+  match l with
+    | hd :: tl -> (hd, i) :: izip (succ i) tl
+    | [] -> []
 
 (* for each categorical feature, define the mapping from category
    (string) to category id (integer), the latter being an index into the
    category directions array of booleans *)
 let c_category_to_index {
     cf_feature_id;
+    cf_feature_name_opt;
     cf_categories;
     cf_anonymous_category_index_opt
-  } =
-  match cf_anonymous_category_index_opt with
-    | None ->
-      let bindings =
-        foldi_left (
-          fun category_id bindings category ->
-            let binding = sp "#define CAT_ID_%d_%s %d"
-              cf_feature_id category category_id in
-            (`Line binding) :: bindings
-        ) 0 [] cf_categories
-      in
-      bindings
+  } : Atd_indent.t =
 
-    | Some anon_index ->
-      let bindings = foldi_left (
-        fun category_id bindings category ->
-          let bindings =
-            if category_id = anon_index then
-              bindings
-            else
-              let binding = sp "#define CAT_ID_%d_%s_%d"
-                cf_feature_id category category_id in
-              (`Line binding) :: bindings
-          in
-          bindings
-        ) 0 [] cf_categories
-      in
-      bindings
+  let root = make_trie (izip 0 cf_categories) 0 in
+  let rec traverse_node node =
+    [ `Line (sp "switch (cat_%d[%d]) {" cf_feature_id node.i);
+      `Block [
+        `Inline (
+          match node.node_value with
+            | Some(id) -> [`Line (sp "case 0: return %d;" id)]
+            | None -> []
+        );
+        `Inline (List.map traverse_branch node.branches);
+        `Inline [
+          `Line "default:";
+          `Block [
+            `Line (sp "DAWG_ERROR(\"Undefined category: %%s\\n\", cat_%d);" cf_feature_id);
+            `Line "exit(1);";
+          ]
+        ]
+      ];
+      `Line "}";
+    ]
 
-let c_category_to_index_stmts features =
-  List.fold_left (
-    fun code feature ->
-      match feature with
+  and traverse_branch (c, trie) =
+    `Inline [
+      `Line (sp "case %C: {" c);
+      `Block (traverse_node trie);
+      `Line "}"
+    ]
+  in
+  `Inline [
+    `Line (sp "int cat_to_id_%d(char const * const cat_%d) {"
+             cf_feature_id cf_feature_id);
+    `Block (traverse_node root);
+    `Line "}";
+  ]
+
+let c_category_to_index_stmts features : Atd_indent.t list =
+  let definition_block : Atd_indent.t list =
+    List.fold_left (
+      fun code feature ->
+        match feature with
         | `CategoricalFeature cf ->
-          let block = `Block (c_category_to_index cf) in
+          let block = c_category_to_index cf in
           block :: code
 
         | `OrdinalFeature _ ->
           code
-  ) [] features
+    ) [] features
+  in
+  [ `Line(sp "#ifndef C_CATEGORY_TO_INDEX_STMTS");
+    `Line(sp "#define C_CATEGORY_TO_INDEX_STMTS");
+    `Block(definition_block);
+    `Line(sp "#endif")
+  ]
 
 let now_datetime_string () =
   let open Unix in
@@ -215,7 +202,8 @@ let c_code_of_trees trees =
   ]
 
 let c_eval_function features trees model kind
-    ~input_file_path ~model_md5 ~function_name ~modifiers ~output_logodds
+    ~input_file_path ~model_md5 ~function_name ~modifiers
+    ~output_logodds ~define
     :
     Atd_indent.t list
     =
@@ -229,7 +217,7 @@ let c_eval_function features trees model kind
         let elements = list_of_category_directions_rle
             category_directions_rle in
         let line =
-          `Line (sp "const short int[] go_left_%d = {%s};" category_directions_id elements) in
+          `Line (sp "static const short int go_left_%d[] = {%s};" category_directions_id elements) in
         line :: code
     ) category_directions_to_id [] in
 
@@ -285,14 +273,21 @@ let c_eval_function features trees model kind
     `Inline comments;
     empty_line;
     import_stmt;
+    `Inline (List.map (fun d -> `Line (sp "#define %s" d)) define);
     empty_line;
-    `Inline category_directions_lists;
-    empty_line;
+    `Inline [
+      `Line ("#ifndef DAWG_ERROR");
+      `Line ("#include <stdio.h>");
+      `Line ("#include <stdlib.h>");
+      `Line ("#define DAWG_ERROR(...) (fprintf (stderr, __VA_ARGS__))");
+      `Line ("#endif")
+    ];
     `Inline (c_category_to_index_stmts features);
     empty_line;
     `Line (Printf.sprintf "// modifiers: %s" modifiers_string);
     `Line (Printf.sprintf "%sdouble %s( ARGS ) {" modifiers_string function_name);
     `Block (c_extract_feature_values features);
+    `Block category_directions_lists;
     c_code_of_trees trees;
     `Block [transform];
     `Line "}";
@@ -300,7 +295,7 @@ let c_eval_function features trees model kind
 
 
 let gen input_file_path output_file_path_opt function_name
-    positive_category_opt modifiers output_logodds =
+    positive_category_opt modifiers output_logodds define =
   let model, model_md5 =
     let model_s = Mikmatch.Text.file_contents input_file_path in
     let model_md5 = Digest.(to_hex (string model_s)) in
@@ -349,7 +344,8 @@ let gen input_file_path output_file_path_opt function_name
           | None -> `Square
   in
   let code = c_eval_function features trees model kind
-      ~input_file_path ~model_md5 ~function_name ~modifiers ~output_logodds in
+    ~input_file_path ~model_md5 ~function_name ~modifiers
+    ~output_logodds ~define in
 
   let ouch =
     match output_file_path_opt with
@@ -395,6 +391,10 @@ let commands =
       let doc = "output is a log-odds value instead of a probability value" in
       Arg.(value & flag & info ["l";"log-odds"] ~doc)
     in
+    let define =
+      let doc = "define C preprocessor macro" in
+      Arg.(value & opt_all string [] & info ["D";"define"] ~doc)
+    in
 
     Term.(pure gen $
             input_file_path $
@@ -402,7 +402,8 @@ let commands =
             function_name $
             positive_category $
             modifiers $
-            output_logodds
+            output_logodds $
+            define
     ),
     Term.info "c" ~doc
   in
