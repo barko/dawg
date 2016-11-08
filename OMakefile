@@ -88,12 +88,15 @@ FILES[] =
   roc
   square
   gen_code
+  gen_python
+  gen_c
   proto_t
   proto_b
   proto_j
   lwt_queue
   huf_hist
   feat
+  trie
 
 # Disable camlp4 for utils.cmi
 # Reason: camlp4 3.12 does not support `module type of <Module>" syntax

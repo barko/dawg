@@ -12,7 +12,8 @@ let _ =
       Learn.commands;
       Eval.commands;
       Bi_metrics.commands;
-      Gen_code.commands;
+      Gen_python.commands;
+      Gen_c.commands;
       Mod_inspect.commands;
       (* Worker.commands; *)
     ] in
