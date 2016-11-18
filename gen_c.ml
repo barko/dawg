@@ -201,12 +201,27 @@ let c_code_of_trees trees =
     `Inline code;
   ]
 
+let regularize_char = function
+  | '.' | ' ' | ':' | '-' -> '_'
+  | c -> c
+
+let regularize_function_name s = String.map regularize_char s
+
 let c_eval_function features trees model kind
     ~input_file_path ~model_md5 ~function_name ~modifiers
     ~output_logodds ~define
     :
     Atd_indent.t list
     =
+  let function_name = match function_name with
+    | Some x -> regularize_function_name x
+    | None ->
+      match input_file_path with
+      | RE (_* '/')? (_+ as name) ("." [alnum]+) ->
+        regularize_function_name name
+      | RE (_* '/')? (_+ as name) ->
+        regularize_function_name name
+  in
   let trees, category_directions_to_id =
     category_direction_ids_of_trees trees in
 
@@ -373,7 +388,7 @@ let commands =
     in
     let function_name =
       let doc = "name of C/C++ function to be generated. " in
-      Arg.(value & opt string "model" &
+      Arg.(value & opt (some string) None &
            info ["f";"function"] ~docv:"STRING" ~doc)
     in
     let positive_category =
