@@ -347,16 +347,22 @@ let updated_loss ~gamma  ~sum_l ~sum_z ~sum_w =
 
 exception EmptyFold
 
-class splitter binarization_threshold_opt y_feature n =
+class splitter
+  binarization_threshold_opt
+  exclude_set
+  y_feature
+  n_rows
+  num_observations
+  =
   let y, positive_category, negative_category_opt =
-    y_array_of_feature binarization_threshold_opt y_feature n in
+    y_array_of_feature binarization_threshold_opt y_feature n_rows in
 
-  let z = Array.make n 0.0 in
-  let w = Array.make n 0.0 in
-  let l = Array.make n 0.0 in
-  let f = Array.make n 0.0 in
+  let z = Array.make n_rows 0.0 in
+  let w = Array.make n_rows 0.0 in
+  let l = Array.make n_rows 0.0 in
+  let f = Array.make n_rows 0.0 in
 
-  let n1 = n + 1 in
+  let n1 = n_rows + 1 in
 
   let cum_z = Array.make n1 0.0 in
   let cum_w = Array.make n1 0.0 in
@@ -371,7 +377,7 @@ class splitter binarization_threshold_opt y_feature n =
     cum_l.(0) <- 0.0;
     cum_n.(0) <- 0;
 
-    for i = 1 to n do
+    for i = 1 to n_rows do
       let i1 = i - 1 in
       if !in_subset.(i1) then (
         cum_z.(i) <- z.(i1) +. cum_z.(i1);
@@ -421,11 +427,10 @@ class splitter binarization_threshold_opt y_feature n =
   in
 
   object
-    method num_observations =
-      n
+    method num_observations : int = num_observations
 
     method clear =
-      for i = 0 to n-1 do
+      for i = 0 to n_rows - 1 do
         z.(i) <- 0.0;
         w.(i) <- 0.0;
         l.(i) <- 0.0;
@@ -436,10 +441,10 @@ class splitter binarization_threshold_opt y_feature n =
         cum_n.(i) <- 0;
       done;
       (* cum's have one more element *)
-      cum_z.(n) <- 0.0;
-      cum_w.(n) <- 0.0;
-      cum_l.(n) <- 0.0;
-      cum_n.(n) <- 0;
+      cum_z.(n_rows) <- 0.0;
+      cum_w.(n_rows) <- 0.0;
+      cum_l.(n_rows) <- 0.0;
+      cum_n.(n_rows) <- 0;
       in_subset := [| |]
 
     (* update [f] and [zwl] based on [gamma] *)
@@ -447,22 +452,22 @@ class splitter binarization_threshold_opt y_feature n =
       let last_nan = ref None in
       Array.iteri (
         fun i gamma_i ->
+          if not exclude_set.(i) then (
+            (* update [f.(i)] *)
+            f.(i) <- f.(i) +. gamma_i;
 
-          (* update [f.(i)] *)
-          f.(i) <- f.(i) +. gamma_i;
-
-          let li, zi, wi =
-            match logit ~f:f.(i) ~y:y.(i) with
+            let li, zi, wi =
+              match logit ~f:f.(i) ~y:y.(i) with
               | `Number lzw -> lzw
               | `NaN ->
                 last_nan := Some i;
                 (nan,nan,nan)
-          in
+            in
 
-          z.(i) <- zi;
-          w.(i) <- wi;
-          l.(i) <- li;
-
+            z.(i) <- zi;
+            w.(i) <- wi;
+            l.(i) <- li;
+          )
       ) gamma;
       match !last_nan with
         | Some _ -> `NaN
@@ -764,8 +769,8 @@ class splitter binarization_threshold_opt y_feature n =
       let val_loss = ref 0.0 in
       let val_nn = ref 0 in
 
-      for i = 0 to n-1 do
-        if Array.get in_set i then
+      for i = 0 to n_rows - 1 do
+        if in_set.(i) then
           (* working folds *)
           let cell =
             match y.(i) >= 0.0, f.(i) >= 0.0 with
@@ -777,7 +782,7 @@ class splitter binarization_threshold_opt y_feature n =
           incr cell;
           incr wrk_nn;
           wrk_loss := !wrk_loss +. l.(i)
-        else if Array.get out_set i then
+        else if out_set.(i) then
           (* validation fold *)
           let cell =
             match y.(i) >= 0.0, f.(i) >= 0.0 with
@@ -826,10 +831,10 @@ class splitter binarization_threshold_opt y_feature n =
         raise EmptyFold
 
     method first_tree set : Model_t.l_tree =
-      assert (Array.length set = n);
+      assert (Array.length set = n_rows);
       let n_true = ref 0 in
       let n_false = ref 0 in
-      for i = 0 to n-1 do
+      for i = 0 to n_rows - 1 do
         if set.(i) then
           match y.(i) with
             |  1.0 -> incr n_true

@@ -30,7 +30,7 @@ type conf = {
 
 type t = {
   (* how many observations are there in the training set? *)
-  n : int;
+  n_rows : int;
 
   (* what is the map of feature id's to features? *)
   feature_map : Feat_map.t;
@@ -204,8 +204,8 @@ and cut_learning_rate conf t iteration =
   learn_with_fold_rate conf t iteration
 
 let learn_with_fold conf t fold initial_learning_rate deadline =
-  let in_set = Array.init t.n (fun i -> let n = t.folds.(i) in n >= 0 && n <> fold) in
-  let out_set = Array.init t.n (fun i -> t.folds.(i) = fold) in
+  let in_set = Array.init t.n_rows (fun i -> let n = t.folds.(i) in n >= 0 && n <> fold) in
+  let out_set = Array.init t.n_rows (fun i -> t.folds.(i) = fold) in
 
   let first_tree = t.splitter#first_tree in_set in
   reset t first_tree;
@@ -321,16 +321,32 @@ let folds_of_feature_name conf sampler feature_map n a_y_feature =
   in
 
   let y_array = Feat_utils.array_of_afeature a_y_feature in
-  let () = match y_array with
-    | `Float y_values ->
-      Array.iteri (fun i (_, y_value) ->
+  let () =
+    if conf.exclude_inf_target || conf.exclude_nan_target then (
+      epr "[INFO] exclude_inf_target=%b exclude_nan_target=%b\n%!"
+        conf.exclude_inf_target conf.exclude_nan_target;
+      match y_array with
+        | `Float y_values ->
+          let count_inf = ref 0 in
+          let count_nan = ref 0 in
+          Array.iteri (fun i (_, y_value) ->
         (* Let's exclude any bad data by setting the fold to -1. *)
-        match classify_float y_value with
-          | FP_infinite when conf.exclude_inf_target -> folds.(i) <- -1
-          | FP_nan when conf.exclude_nan_target -> folds.(i) <- -1
-          | _ -> ()
-      ) y_values
-    | _ -> ()
+            match classify_float y_value with
+            | FP_infinite when conf.exclude_inf_target ->
+              folds.(i) <- -1;
+              incr count_inf
+            | FP_nan when conf.exclude_nan_target ->
+              folds.(i) <- -1;
+              incr count_nan
+            | _ -> ()
+          ) y_values;
+          let n_rows = Array.length y_values in
+          if !count_inf <> 0 then
+            epr "[WARNING] excluding %d inf rows out of %d\n%!" !count_inf n_rows;
+          if !count_nan <> 0 then
+            epr "[WARNING] excluding %d nan rows out of %d\n%!" !count_nan n_rows
+        | _ -> ()
+    )
   in
   folds, feature_map
 
@@ -338,16 +354,16 @@ let learn conf =
   let dog_reader = Dog_io.RO.create conf.dog_file_path in
   let feature_map = Feat_map.create dog_reader in
 
-  let num_observations =
+  let n_rows =
     let dog = Dog_io.RO.dog dog_reader in
     dog.Dog_t.num_observations
   in
-  let n = num_observations in
+  (* let n = num_observations in *)
 
   assert ( conf.num_folds > 0 );
-  if conf.num_folds >= n then (
+  if conf.num_folds >= n_rows then (
     pr "number of folds %d must be smaller than the number of observations \
-        %d\n%!" conf.num_folds n;
+        %d\n%!" conf.num_folds n_rows;
     exit 1
   );
 
@@ -396,12 +412,17 @@ let learn conf =
   in
 
   let random_state = Random.State.make random_seed in
-  let sampler = Sampler.create n in
+  let sampler = Sampler.create n_rows in
   Sampler.shuffle sampler random_state;
 
   let folds, feature_map =
-    folds_of_feature_name conf sampler feature_map n a_y_feature
+    folds_of_feature_name conf sampler feature_map n_rows a_y_feature
   in
+  let exclude_set = Array.init n_rows (fun i -> folds.(i) < 0) in
+  let excluded_observations =
+    Array.fold_left (fun n b -> if b then succ n else n) 0 exclude_set
+  in
+  let num_observations = n_rows - excluded_observations in
 
   assert (
     (* make sure fold features (if any) are gone from the
@@ -423,15 +444,17 @@ let learn conf =
     match conf.loss_type with
       | `Logistic ->
         new Logistic.splitter
-          conf.binarization_threshold_opt a_y_feature num_observations
+          conf.binarization_threshold_opt
+          exclude_set a_y_feature n_rows num_observations
       | `Square ->
-        new Square.splitter a_y_feature num_observations
+        new Square.splitter
+          exclude_set a_y_feature n_rows num_observations
   in
 
-  let eval = Tree.mk_eval num_observations in
+  let eval = Tree.mk_eval n_rows in
 
   let t = {
-    n;
+    n_rows;
     feature_map;
     splitter;
     eval;
