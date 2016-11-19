@@ -749,7 +749,7 @@ class splitter binarization_threshold_opt y_feature n =
           done;
           !best_split
 
-    method metrics mem =
+    method metrics ~in_set ~out_set =
       let wrk_tt = ref 0 in
       let wrk_tf = ref 0 in
       let wrk_ft = ref 0 in
@@ -765,7 +765,7 @@ class splitter binarization_threshold_opt y_feature n =
       let val_nn = ref 0 in
 
       for i = 0 to n-1 do
-        if mem i then
+        if Array.get in_set i then
           (* working folds *)
           let cell =
             match y.(i) >= 0.0, f.(i) >= 0.0 with
@@ -777,7 +777,7 @@ class splitter binarization_threshold_opt y_feature n =
           incr cell;
           incr wrk_nn;
           wrk_loss := !wrk_loss +. l.(i)
-        else
+        else if Array.get out_set i then
           (* validation fold *)
           let cell =
             match y.(i) >= 0.0, f.(i) >= 0.0 with

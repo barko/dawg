@@ -24,6 +24,8 @@ type conf = {
   max_trees_opt : int option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;
+  exclude_nan_target : bool;
+  exclude_inf_target : bool;
 }
 
 type t = {
@@ -75,7 +77,8 @@ type learning_iteration = {
 
   (* is the observation in the 'working folds' or the 'validation
      fold' ?  *)
-  fold_set : bool array;
+  in_set : bool array;
+  out_set : bool array;
 
   learning_rate : float;
   first_loss : float;
@@ -105,13 +108,14 @@ let rec learn_with_fold_rate conf t iteration =
 
   (* draw a random subset of this fold *)
   Sampler.shuffle t.sampler iteration.random_state;
-  let sub_set = Sampler.array (
+  let { in_set; out_set } = iteration in
+  let in_subset = Sampler.array (
       fun ~index ~value ->
         (* sample half the data that is also in the current fold *)
-        iteration.fold_set.(index) && value mod 2 = 0
+        in_set.(index) && value mod 2 = 0
     ) t.sampler in
 
-  match Tree.make m 0 sub_set with
+  match Tree.make m 0 in_subset with
     | None ->
       print_endline "converged: no more trees";
       `Converged (iteration.learning_rate, iteration.trees)
@@ -128,7 +132,7 @@ let rec learn_with_fold_rate conf t iteration =
 
         | `Ok ->
           let { Loss.s_wrk; s_val; has_converged; val_loss } =
-            t.splitter#metrics (Array.get iteration.fold_set) in
+            t.splitter#metrics ~in_set ~out_set in
 
           (* compute convergence rate and smooth it *)
           let convergence_rate =
@@ -146,7 +150,7 @@ let rec learn_with_fold_rate conf t iteration =
             convergence_rate_hat;
 
           if has_converged then (
-            pr "converged: metrics inidicate continuing is pointless\n";
+            pr "converged: metrics indicate continuing is pointless\n";
             `Converged (iteration.learning_rate, iteration.trees)
           )
           else if val_loss >= 2.0 *. iteration.prev_loss then (
@@ -200,13 +204,15 @@ and cut_learning_rate conf t iteration =
   learn_with_fold_rate conf t iteration
 
 let learn_with_fold conf t fold initial_learning_rate deadline =
-  let fold_set = Array.init t.n (fun i -> t.folds.(i) <> fold) in
+  let in_set = Array.init t.n (fun i -> let n = t.folds.(i) in n >= 0 && n <> fold) in
+  let out_set = Array.init t.n (fun i -> t.folds.(i) = fold) in
 
-  let first_tree = t.splitter#first_tree fold_set in
+  let first_tree = t.splitter#first_tree in_set in
   reset t first_tree;
 
   let { Loss.s_wrk; s_val; val_loss = first_val_loss } =
-    t.splitter#metrics (Array.get fold_set) in
+    t.splitter#metrics ~in_set ~out_set
+  in
 
   pr "fold % 3d          %s %s\n%!" fold s_wrk s_val;
 
@@ -226,7 +232,8 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
   let iteration = {
     i = 1;
     fold;
-    fold_set;
+    in_set;
+    out_set;
     first_loss = first_val_loss;
     prev_loss = first_val_loss;
     first_tree;
@@ -239,8 +246,9 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
 
   learn_with_fold_rate conf t iteration
 
-let folds_of_feature_name conf sampler feature_map n y_feature_id =
-  match conf.fold_feature_opt with
+let folds_of_feature_name conf sampler feature_map n a_y_feature =
+  let y_feature_id = Feat_utils.id_of_feature a_y_feature in
+  let folds, feature_map = match conf.fold_feature_opt with
     | None ->
       (* randomly choose fold assignments *)
       let folds = Sampler.array (
@@ -310,7 +318,21 @@ let folds_of_feature_name conf sampler feature_map n y_feature_id =
                     Feat_map.remove feature_map_0 fold_feature_id
                 ) feature_map fold_features  in
               folds, feature_map
+  in
 
+  let y_array = Feat_utils.array_of_afeature a_y_feature in
+  let () = match y_array with
+    | `Float y_values ->
+      Array.iteri (fun i (_, y_value) ->
+        (* Let's exclude any bad data by setting the fold to -1. *)
+        match classify_float y_value with
+          | FP_infinite when conf.exclude_inf_target -> folds.(i) <- -1
+          | FP_nan when conf.exclude_nan_target -> folds.(i) <- -1
+          | _ -> ()
+      ) y_values
+    | _ -> ()
+  in
+  folds, feature_map
 
 let learn conf =
   let dog_reader = Dog_io.RO.create conf.dog_file_path in
@@ -329,7 +351,7 @@ let learn conf =
     exit 1
   );
 
-  let y_feature =
+  let i_y_feature, a_y_feature =
     match Feat_map.find feature_map conf.y with
       | [] ->
         pr "target %s not found\n%!"
@@ -342,13 +364,13 @@ let learn conf =
           (Feat_utils.string_of_feature_descr conf.y);
         exit 1
 
-      | [y_feature] ->
-        Feat_map.i_to_a feature_map y_feature
+      | [i_y_feature] ->
+        i_y_feature, Feat_map.i_to_a feature_map i_y_feature
   in
 
   (* remove target from the feature set *)
   let feature_map = Feat_map.remove feature_map
-      (Feat_utils.id_of_feature y_feature) in
+      (Feat_utils.id_of_feature i_y_feature) in
 
   (* remove excluded features, if any *)
   let feature_map, num_excluded_features =
@@ -378,8 +400,7 @@ let learn conf =
   Sampler.shuffle sampler random_state;
 
   let folds, feature_map =
-    let y_feature_id = Feat_utils.id_of_feature y_feature in
-    folds_of_feature_name conf sampler feature_map n y_feature_id
+    folds_of_feature_name conf sampler feature_map n a_y_feature
   in
 
   assert (
@@ -402,9 +423,9 @@ let learn conf =
     match conf.loss_type with
       | `Logistic ->
         new Logistic.splitter
-          conf.binarization_threshold_opt y_feature num_observations
+          conf.binarization_threshold_opt a_y_feature num_observations
       | `Square ->
-        new Square.splitter y_feature num_observations
+        new Square.splitter a_y_feature num_observations
   in
 
   let eval = Tree.mk_eval num_observations in

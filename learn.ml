@@ -61,6 +61,8 @@ let learn
     feature_name_negative
     feature_id_positive
     feature_id_negative
+    exclude_nan_target
+    exclude_inf_target
   =
 
   if max_depth < 1 then (
@@ -221,6 +223,8 @@ let learn
       max_trees_opt;
       binarization_threshold_opt;
       feature_monotonicity;
+      exclude_nan_target;
+      exclude_inf_target;
     }
   in
 
@@ -390,6 +394,15 @@ let commands =
             info ["G"; "gte"; "binarization-threshold-gte"] ~docv:"FLOAT" ~doc)
     in
 
+    let exclude_nan_target =
+      let doc = "Exclude row where the target is a floating point nan" in
+      Arg.(value & opt bool false & info ["exclude-nan-target"] ~docv:"BOOL" ~doc)
+    in
+    let exclude_inf_target =
+      let doc = "Exclude row where the target is a floating point infinity" in
+      Arg.(value & opt bool false & info ["exclude-inf-target"] ~docv:"BOOL" ~doc)
+    in
+
     Term.(pure learn $
             input_file_path $
             y_name $
@@ -411,7 +424,9 @@ let commands =
             feature_name_positive $
             feature_name_negative $
             feature_id_positive $
-            feature_id_negative
+            feature_id_negative $
+            exclude_nan_target $
+            exclude_inf_target
          ),
     Term.info "learn" ~doc
   in

@@ -17,6 +17,8 @@ type conf = {
   max_trees_opt : int option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;
+  exclude_nan_target : bool;
+  exclude_inf_target : bool;
 }
 
 val learn : conf -> unit

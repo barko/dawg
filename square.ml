@@ -480,18 +480,18 @@ class splitter y_feature n =
           done;
           !best_split
 
-    method metrics mem =
+    method metrics ~in_set ~out_set =
       let wrk_loss = ref 0.0 in
       let wrk_nn = ref 0 in
       let val_loss = ref 0.0 in
       let val_nn = ref 0 in
 
       for i = 0 to n-1 do
-        if mem i then (
+        if Array.get in_set i then (
           incr wrk_nn;
           wrk_loss := !wrk_loss +. l.(i)
         )
-        else (
+        else if Array.get out_set i then (
           incr val_nn;
           val_loss := !val_loss +. l.(i)
         )
