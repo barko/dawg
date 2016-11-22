@@ -253,13 +253,28 @@ let mk_get features header =
   in
   get, feature_id_to_feature_name
 
-let normal f =
+let normal_probability f =
   let probability = Logistic.probability f in
   probability
 
-let invert f =
+let invert_probability f =
   let probability = Logistic.probability f in
   1. -. probability
+
+let normal_logodds f = f
+let invert_logodds f = ~-.f
+
+let normal ~output_logodds =
+  if output_logodds then
+    normal_logodds
+  else
+    normal_probability
+
+let invert ~output_logodds =
+  if output_logodds then
+    invert_logodds
+  else
+    invert_probability
 
 let noop f = f
 
@@ -269,6 +284,8 @@ let model_eval
     prediction_file_path
     positive_category_opt
     no_header
+    output_logodds
+    output_header
   =
 
   let pch =
@@ -288,13 +305,13 @@ let model_eval
             if positive_category = logistic.bi_positive_category then
               (* user requests the model's notion of positive; nothing to
                  do *)
-              normal
+              normal ~output_logodds
             else
               match logistic.bi_negative_category_opt with
                 | Some neg_category ->
                   if neg_category = positive_category then
                     (* invert polarity *)
-                    invert
+                    invert ~output_logodds
                   else (
                     pr "unknown target category %S\n%!" positive_category;
                     exit 1
@@ -302,7 +319,7 @@ let model_eval
 
                 | None ->
                   (* negative category is anonymous; so any string will do *)
-                  invert
+                  invert ~output_logodds
           in
           transform, logistic.bi_trees, logistic.bi_features
         )
@@ -310,13 +327,13 @@ let model_eval
       | None, `Square square ->
         noop, square.re_trees, square.re_features
 
-      | Some _, `Square _ ->
-        pr "file %S contains a regression model, not a logistic model as \
+      | Some _, `Square square ->
+        epr "[WARNING] file %S contains a regression model, not a logistic model as \
             implied by the positive category argument\n%!" model_file_path;
-        exit 1
+        noop, square.re_trees, square.re_features
 
       | None, `Logistic _ ->
-        pr "file %S contains a logistic model, but no positive category was \
+        epr "[ERROR] file %S contains a logistic model, but no positive category was \
             provided\n%!" model_file_path;
         exit 1
   in
@@ -349,6 +366,11 @@ let model_eval
 
   let get, feature_id_to_feature_name = mk_get features header in
 
+  let () =
+    match output_header with
+      | Some h -> fprintf pch "%s\n" h
+      | None -> ()
+  in
   let rec loop row_num pch =
     match next_row () with
       | `Ok `EOF -> ()
@@ -447,6 +469,16 @@ let commands =
     Arg.(value & flag & info ["h";"no-header"] ~doc)
   in
 
+  let output_header =
+    let doc = "output this string as the header of the output file" in
+    Arg.(value & opt (some string) None & info ["H";"output-header"] ~doc)
+  in
+
+  let output_logodds =
+    let doc = "output is a log-odds value instead of a probability value" in
+    Arg.(value & flag & info ["l";"log-odds"] ~doc)
+  in
+
   let eval_cmd =
     let doc = "evaluate a binary classification model on each \
                row of a csv file" in
@@ -455,7 +487,9 @@ let commands =
              csv_file_path $
              prediction_file_path $
              positive_category $
-             no_header
+             no_header $
+             output_logodds $
+             output_header
          ),
     Term.info "eval" ~doc
   in
