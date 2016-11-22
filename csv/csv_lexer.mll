@@ -133,6 +133,9 @@ rule row = parse
 
   | float
       { float_or_int_of_string (lexeme lexbuf) }
+  | "inf" ("inity")? { FLOAT infinity }
+  | "-inf" ("inity")? { FLOAT neg_infinity }
+  | "neg_inf" ("inity")? { FLOAT neg_infinity }
 
   (* unquoted string; for a number (float or int) to be
      interpreted as a string, it must be quoted *)

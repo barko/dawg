@@ -6,5 +6,6 @@ type binarization_threshold = [
 
 val probability : float -> float
 class splitter :
-  float option -> binarization_threshold option -> Feat.afeature -> int
+  float option -> binarization_threshold option
+    -> bool array -> Feat.afeature -> int -> int
     -> Loss.splitter
