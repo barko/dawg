@@ -324,6 +324,12 @@ let model_eval
           transform, logistic.bi_trees, logistic.bi_features
         )
 
+      | None, `Logistic logistic ->
+        epr "[WARNING] file %S contains a logistic model, but no positive category was \
+            provided\n%!" model_file_path;
+        normal ~output_logodds, logistic.bi_trees, logistic.bi_features
+
+
       | None, `Square square ->
         noop, square.re_trees, square.re_features
 
@@ -331,11 +337,6 @@ let model_eval
         epr "[WARNING] file %S contains a regression model, not a logistic model as \
             implied by the positive category argument\n%!" model_file_path;
         noop, square.re_trees, square.re_features
-
-      | None, `Logistic _ ->
-        epr "[ERROR] file %S contains a logistic model, but no positive category was \
-            provided\n%!" model_file_path;
-        exit 1
   in
 
   (* decode category directions from rle to array *)
