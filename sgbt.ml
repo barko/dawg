@@ -22,6 +22,7 @@ type conf = {
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
+  max_gamma_opt : float option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;
 }
@@ -100,7 +101,7 @@ let rec learn_with_fold_rate conf t iteration =
     Tree.max_depth = conf.max_depth;
     feature_map = t.feature_map;
     feature_monotonicity_map;
-    splitter = t.splitter
+    splitter = t.splitter;
   } in
 
   (* draw a random subset of this fold *)
@@ -402,9 +403,10 @@ let learn conf =
     match conf.loss_type with
       | `Logistic ->
         new Logistic.splitter
-          conf.binarization_threshold_opt y_feature num_observations
+          conf.max_gamma_opt conf.binarization_threshold_opt
+          y_feature num_observations
       | `Square ->
-        new Square.splitter y_feature num_observations
+        new Square.splitter conf.max_gamma_opt y_feature num_observations
   in
 
   let eval = Tree.mk_eval num_observations in

@@ -105,7 +105,7 @@ let updated_loss ~gamma  ~sum_l ~sum_z ~sum_n =
 
 exception EmptyFold
 
-class splitter y_feature n =
+class splitter max_gamma_opt y_feature n =
   let y = get_y_as_array y_feature n in
 
   let z = Array.make n 0.0 in
@@ -333,6 +333,10 @@ class splitter y_feature n =
               let left_gamma  = left.sum_z.(k)    /. (float left_n)  in
               let right_gamma = right.sum_z.(k_1) /. (float right_n) in
 
+              let left_gamma, right_gamma =
+                Feat_utils.apply_max_gamma_opt ~max_gamma_opt left_gamma right_gamma
+              in
+
               if match monotonicity with
                  | `Positive -> right_gamma > left_gamma
                  | `Negative -> right_gamma < left_gamma
@@ -429,6 +433,10 @@ class splitter y_feature n =
 
               let left_gamma  = left.sum_z.(k)    /. (float left_n)  in
               let right_gamma = right.sum_z.(k+1) /. (float right_n) in
+
+              let left_gamma, right_gamma =
+                Feat_utils.apply_max_gamma_opt ~max_gamma_opt left_gamma right_gamma
+              in
 
               let loss_left = updated_loss
                   ~gamma:left_gamma

@@ -77,7 +77,7 @@ type m = {
   max_depth : int;
   feature_map : Feat_map.t;
   feature_monotonicity_map : feature_monotonicity_map;
-  splitter : Loss.splitter
+  splitter : Loss.splitter;
 }
 
 let string_of_split { s_gamma ; s_n ; s_loss } =

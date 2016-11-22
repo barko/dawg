@@ -1,3 +1,4 @@
+val apply_max_gamma_opt : max_gamma_opt:float option -> float -> float -> float * float
 val array_of_afeature : Feat.afeature ->
   [ `Float of (int * float) array
   | `Int of (int * int) array

@@ -347,7 +347,7 @@ let updated_loss ~gamma  ~sum_l ~sum_z ~sum_w =
 
 exception EmptyFold
 
-class splitter binarization_threshold_opt y_feature n =
+class splitter max_gamma_opt binarization_threshold_opt y_feature n =
   let y, positive_category, negative_category_opt =
     y_array_of_feature binarization_threshold_opt y_feature n in
 
@@ -590,10 +590,12 @@ class splitter binarization_threshold_opt y_feature n =
                left.sum_w.(k) <> 0.0 &&
                right.sum_w.(k_1) <> 0.0
             then (
-
               let left_gamma  = left.sum_z.(k)    /. left.sum_w.(k)    in
               let right_gamma = right.sum_z.(k_1) /. right.sum_w.(k_1) in
 
+              let left_gamma, right_gamma =
+                Feat_utils.apply_max_gamma_opt ~max_gamma_opt left_gamma right_gamma
+              in
               let loss_left = updated_loss
                   ~gamma:left_gamma
                   ~sum_l:left.sum_l.(k)
@@ -692,6 +694,10 @@ class splitter binarization_threshold_opt y_feature n =
 
               let left_gamma  = left.sum_z.(k)    /. left.sum_w.(k)    in
               let right_gamma = right.sum_z.(k+1) /. right.sum_w.(k+1) in
+
+              let left_gamma, right_gamma =
+                Feat_utils.apply_max_gamma_opt ~max_gamma_opt left_gamma right_gamma
+              in
 
               if match monotonicity with
                  | `Positive -> right_gamma > left_gamma
