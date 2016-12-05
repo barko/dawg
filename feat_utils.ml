@@ -1,5 +1,8 @@
 open Dog_t
 
+let pr = Printf.printf
+let epr = Printf.eprintf
+
 let apply_max_gamma ~max_gamma gamma =
   if gamma < 0.0 then
     max gamma (~-. max_gamma)
@@ -205,6 +208,25 @@ let folds_of_feature ~n ~num_folds = function
           )
       );
       `Folds folds
+
+let weights_of_afeature = function
+  | `Cat { c_feature_name_opt = Some feature_name } ->
+    epr "[ERROR] feature %s is categorical but a float feature is needed" feature_name;
+    exit 1
+  | `Cat { c_feature_id = feature_id } ->
+    epr "[ERROR] nameless feature id %d is categorical but a float feature is needed" feature_id;
+    exit 1
+  | afeature ->
+    match array_of_afeature afeature with
+      | `String _ -> assert false
+      | `StringAnon _ -> assert false
+      | `Int id_weight_array ->
+        let total = Array.fold_left (fun accu (id, w_int) -> accu + w_int) 0 id_weight_array in
+        let total = float total in
+        Array.map (fun (id, w_int) -> float w_int /. total) id_weight_array
+      | `Float id_weight_array ->
+        let total = Array.fold_left (fun accu (id, w) -> accu +. w) 0.0 id_weight_array in
+        Array.map (fun (id, w) -> w /. total) id_weight_array
 
 let vector f = function
   | `RLE rle -> `RLE (f rle)

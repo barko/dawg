@@ -50,6 +50,8 @@ let learn
     num_folds
     fold_feature_name_opt
     fold_feature_id_opt
+    weight_feature_name_opt
+    weight_feature_id_opt
     convergence_rate_smoother_forgetful_factor
     deadline
     output_file_path
@@ -164,6 +166,10 @@ let learn
     feature_descr_of_args fold_feature_name_opt fold_feature_id_opt
   in
 
+  let weight_feature_opt =
+    feature_descr_of_args weight_feature_name_opt weight_feature_id_opt
+  in
+
   let binarization_threshold_opt =
     match lte_binarization_threshold, gte_binarization_threshold with
       | Some _, Some _ ->
@@ -233,6 +239,7 @@ let learn
       output_file_path;
       excluded_feature_name_regexp_opt = regexp_opt;
       fold_feature_opt;
+      weight_feature_opt;
       max_trees_opt;
       max_gamma_opt;
       binarization_threshold_opt;
@@ -318,6 +325,20 @@ let commands =
                  learning." in
       Arg.(value & opt (some int) None &
            info ["f-id";"fold-feature-id"] ~docv:"INT" ~doc )
+    in
+
+    let weight_feature_name =
+      let doc = "select a real valued feature by name representing \
+                 observation weights." in
+      Arg.(value & opt (some string) None &
+           info ["w";"weight-feature-name"] ~docv:"STRING" ~doc )
+    in
+
+    let weight_feature_id =
+      let doc = "select a real valued feature by name representing \
+                 observation weights." in
+      Arg.(value & opt (some int) None &
+           info ["w-id";"weight-feature-id"] ~docv:"INT" ~doc )
     in
 
     let feature_name_positive =
@@ -434,6 +455,8 @@ let commands =
             num_folds $
             fold_feature_name $
             fold_feature_id $
+            weight_feature_name $
+            weight_feature_id $
             convergence_rate_smoother_forgetful_factor $
             deadline $
             output_file_path $

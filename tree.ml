@@ -81,7 +81,7 @@ type m = {
 }
 
 let string_of_split { s_gamma ; s_n ; s_loss } =
-  Printf.sprintf "gamma=%f n=%d loss=%f" s_gamma s_n s_loss
+  Printf.sprintf "gamma=%f n=%f loss=%f" s_gamma s_n s_loss
 
 let best_split_of_features m =
   Feat_map.fold m.feature_map (

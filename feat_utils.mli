@@ -21,6 +21,8 @@ val folds_of_feature : n:int -> num_folds:int -> Feat.afeature ->
    For categorical features, [num_folds] must match the cardinality of
    the feature exactly. *)
 
+val weights_of_afeature : Feat.afeature -> float array
+
 val i_to_a : (int -> Vec.t) -> Feat.ifeature -> Feat.afeature
 
 type feature_descr = [ `Name of string | `Id of int ]

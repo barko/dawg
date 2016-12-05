@@ -5,7 +5,7 @@ type binarization_threshold = [
   | `GTE of float (* positive label is GTE, negative case is LT *)
 ]
 
-let logit ~f ~y =
+let logit ~f ~y = (* n is the weight of this observation *)
 
   let f2 = -2.0 *. f in
   let ef2 = exp f2 in (* $\exp (-2 f)$ *)
@@ -54,7 +54,7 @@ let probability f =
 
 
 type metrics = {
-  n : int;
+  n : float; (* Weights can be fractional *)
   tt : float;
   tf : float;
   ft : float;
@@ -79,7 +79,7 @@ type s = {
 
 
 let string_of_metrics { n; loss; tt; tf; ft; ff } =
-  Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+  Printf.sprintf "% 8.2f %.4e %.4e %.4e %.4e %.4e"
     n loss tt tf ft ff
 
 let zero_one_to_minus_plus_one = function
@@ -320,20 +320,20 @@ let y_array_of_feature binarization_threshold_opt y_feature n =
 
 module Aggregate = struct
   type t = {
-    sum_n : int array;
+    sum_n : float array;
     sum_z : float array;
     sum_w : float array;
     sum_l : float array;
   }
 
   let update t ~value ~n ~z ~w ~l =
-    t.sum_n.(value) <- t.sum_n.(value) +  n;
+    t.sum_n.(value) <- t.sum_n.(value) +. n;
     t.sum_z.(value) <- t.sum_z.(value) +. z;
     t.sum_w.(value) <- t.sum_w.(value) +. w;
     t.sum_l.(value) <- t.sum_l.(value) +. l
 
   let create cardinality = {
-    sum_n = Array.make cardinality 0;
+    sum_n = Array.make cardinality 0.0;
     sum_z = Array.make cardinality 0.0;
     sum_w = Array.make cardinality 0.0;
     sum_l = Array.make cardinality 0.0;
@@ -350,7 +350,7 @@ exception EmptyFold
 class splitter
   max_gamma_opt
   binarization_threshold_opt
-  exclude_set
+  weights
   y_feature
   n_rows
   num_observations
@@ -368,7 +368,7 @@ class splitter
   let cum_z = Array.make n1 0.0 in
   let cum_w = Array.make n1 0.0 in
   let cum_l = Array.make n1 0.0 in
-  let cum_n = Array.make n1 0 in
+  let cum_n = Array.make n1 0.0 in
 
   let in_subset = ref [| |] in
 
@@ -376,7 +376,7 @@ class splitter
     cum_z.(0) <- 0.0;
     cum_w.(0) <- 0.0;
     cum_l.(0) <- 0.0;
-    cum_n.(0) <- 0;
+    cum_n.(0) <- 0.0;
 
     for i = 1 to n_rows do
       let i1 = i - 1 in
@@ -384,7 +384,7 @@ class splitter
         cum_z.(i) <- z.(i1) +. cum_z.(i1);
         cum_w.(i) <- w.(i1) +. cum_w.(i1);
         cum_l.(i) <- l.(i1) +. cum_l.(i1);
-        cum_n.(i) <- 1      +  cum_n.(i1)
+        cum_n.(i) <- weights.(i1) +.  cum_n.(i1)
       )
       else (
         cum_z.(i) <- cum_z.(i1);
@@ -405,9 +405,7 @@ class splitter
           let z_diff = cum_z.(index_length) -. cum_z.(index) in
           let w_diff = cum_w.(index_length) -. cum_w.(index) in
           let l_diff = cum_l.(index_length) -. cum_l.(index) in
-          let n_diff = cum_n.(index_length) -  cum_n.(index) in
-
-          assert ( n_diff >= 0 );
+          let n_diff = cum_n.(index_length) -. cum_n.(index) in
 
           Aggregate.update agg ~value ~n:n_diff ~l:l_diff
             ~z:z_diff ~w:w_diff
@@ -420,7 +418,7 @@ class splitter
       Dense.iter ~width:width_num_bytes v (
         fun ~index ~value ->
           if !in_subset.(index) then
-            Aggregate.update agg ~value ~n:1 ~l:l.(index)
+            Aggregate.update agg ~value ~n:weights.(index) ~l:l.(index)
               ~z:z.(index) ~w:w.(index)
       );
       agg
@@ -439,13 +437,13 @@ class splitter
         cum_z.(i) <- 0.0;
         cum_w.(i) <- 0.0;
         cum_l.(i) <- 0.0;
-        cum_n.(i) <- 0;
+        cum_n.(i) <- 0.0;
       done;
       (* cum's have one more element *)
       cum_z.(n_rows) <- 0.0;
       cum_w.(n_rows) <- 0.0;
       cum_l.(n_rows) <- 0.0;
-      cum_n.(n_rows) <- 0;
+      cum_n.(n_rows) <- 0.0;
       in_subset := [| |]
 
     (* update [f] and [zwl] based on [gamma] *)
@@ -453,7 +451,7 @@ class splitter
       let last_nan = ref None in
       Array.iteri (
         fun i gamma_i ->
-          if not exclude_set.(i) then (
+          if not (weights.(i) = 0.0) then (
             (* update [f.(i)] *)
             f.(i) <- f.(i) +. gamma_i;
 
@@ -465,9 +463,9 @@ class splitter
                 (nan,nan,nan)
             in
 
-            z.(i) <- zi;
-            w.(i) <- wi;
-            l.(i) <- li;
+            z.(i) <- zi *. weights.(i);
+            w.(i) <- wi *. weights.(i);
+            l.(i) <- li *. weights.(i);
           )
       ) gamma;
       match !last_nan with
@@ -519,7 +517,7 @@ class splitter
           let pseudo_response_sorted =
             Array.init cardinality (
               fun k ->
-                let n = float_of_int agg.sum_n.(k) in
+                let n = agg.sum_n.(k) in
                 let average_response = agg.sum_z.(k) /. n in
                 k, average_response
             )
@@ -560,7 +558,7 @@ class splitter
             let lk   = s_to_k.(ls)   in
             let lk_1 = s_to_k.(ls-1) in
 
-            left.sum_n.(lk) <- left.sum_n.(lk_1) +  agg.sum_n.(lk);
+            left.sum_n.(lk) <- left.sum_n.(lk_1) +. agg.sum_n.(lk);
             left.sum_z.(lk) <- left.sum_z.(lk_1) +. agg.sum_z.(lk);
             left.sum_w.(lk) <- left.sum_w.(lk_1) +. agg.sum_w.(lk);
             left.sum_l.(lk) <- left.sum_l.(lk_1) +. agg.sum_l.(lk);
@@ -569,7 +567,7 @@ class splitter
             let rk   = s_to_k.(rs)   in
             let rk_1 = s_to_k.(rs+1) in
 
-            right.sum_n.(rk) <- right.sum_n.(rk_1) +  agg.sum_n.(rk);
+            right.sum_n.(rk) <- right.sum_n.(rk_1) +. agg.sum_n.(rk);
             right.sum_z.(rk) <- right.sum_z.(rk_1) +. agg.sum_z.(rk);
             right.sum_w.(rk) <- right.sum_w.(rk_1) +. agg.sum_w.(rk);
             right.sum_l.(rk) <- right.sum_l.(rk_1) +. agg.sum_l.(rk);
@@ -591,8 +589,8 @@ class splitter
             (* we can only have a split when the left and right
                approximations are based on one or more observations *)
 
-            if left_n > 0 &&
-               right_n > 0 &&
+            if left_n > 0.0 &&
+               right_n > 0.0 &&
                left.sum_w.(k) <> 0.0 &&
                right.sum_w.(k_1) <> 0.0
             then (
@@ -670,13 +668,13 @@ class splitter
 
           (* compute the cumulative sums *)
           for lk = 1 to last do
-            left.sum_n.(lk) <- left.sum_n.(lk-1) +  agg.sum_n.(lk);
+            left.sum_n.(lk) <- left.sum_n.(lk-1) +. agg.sum_n.(lk);
             left.sum_z.(lk) <- left.sum_z.(lk-1) +. agg.sum_z.(lk);
             left.sum_w.(lk) <- left.sum_w.(lk-1) +. agg.sum_w.(lk);
             left.sum_l.(lk) <- left.sum_l.(lk-1) +. agg.sum_l.(lk);
 
             let rk = cardinality - lk - 1 in
-            right.sum_n.(rk) <- right.sum_n.(rk+1) +  agg.sum_n.(rk);
+            right.sum_n.(rk) <- right.sum_n.(rk+1) +. agg.sum_n.(rk);
             right.sum_z.(rk) <- right.sum_z.(rk+1) +. agg.sum_z.(rk);
             right.sum_w.(rk) <- right.sum_w.(rk+1) +. agg.sum_w.(rk);
             right.sum_l.(rk) <- right.sum_l.(rk+1) +. agg.sum_l.(rk);
@@ -692,8 +690,8 @@ class splitter
             (* we can only have a split when the left and right
                approximations are based on one or more observations *)
 
-            if left_n > 0 &&
-               right_n > 0 &&
+            if left_n > 0.0 &&
+               right_n > 0.0 &&
                left.sum_w.(k) <> 0.0 &&
                right.sum_w.(k+1) <> 0.0
             then (

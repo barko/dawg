@@ -1,7 +1,7 @@
 open Proto_t
 
 type metrics = {
-  n : int;
+  n : float;
   loss : float;
 }
 
@@ -12,7 +12,7 @@ let loss { loss } =
 type model = Model_t.l_regression_model
 
 let string_of_metrics { n; loss } =
-  Printf.sprintf "% 8d %.4e" n loss
+  Printf.sprintf "% 6.2f %.4e" n loss
 
 let get_y_as_array y_feature n =
   let y = Array.make n nan in
@@ -80,18 +80,18 @@ let get_y_as_array y_feature n =
 
 module Aggregate = struct
   type t = {
-    sum_n : int array;
+    sum_n : float array;
     sum_z : float array;
     sum_l : float array;
   }
 
   let update t ~value ~n ~z ~l =
-    t.sum_n.(value) <- t.sum_n.(value) +  n;
+    t.sum_n.(value) <- t.sum_n.(value) +. n;
     t.sum_z.(value) <- t.sum_z.(value) +. z;
     t.sum_l.(value) <- t.sum_l.(value) +. l
 
   let create cardinality = {
-    sum_n = Array.make cardinality 0;
+    sum_n = Array.make cardinality 0.0;
     sum_z = Array.make cardinality 0.0;
     sum_l = Array.make cardinality 0.0;
   }
@@ -100,12 +100,12 @@ end
 
 (* what would the sum_l be after the split is applied? *)
 let updated_loss ~gamma  ~sum_l ~sum_z ~sum_n =
-  sum_l +. (float sum_n) *. gamma *. gamma -. 2.0 *. gamma *. sum_z
+  sum_l +. sum_n *. gamma *. gamma -. 2.0 *. gamma *. sum_z
 
 
 exception EmptyFold
 
-class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
+class splitter max_gamma_opt weights y_feature n_rows num_observations =
   let y = get_y_as_array y_feature n_rows in
 
   let z = Array.make n_rows 0.0 in
@@ -116,21 +116,21 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
 
   let cum_z = Array.make n1 0.0 in
   let cum_l = Array.make n1 0.0 in
-  let cum_n = Array.make n1 0 in
+  let cum_n = Array.make n1 0.0 in
 
   let in_subset = ref [| |] in
 
   let update_cum () =
     cum_z.(0) <- 0.0;
     cum_l.(0) <- 0.0;
-    cum_n.(0) <- 0;
+    cum_n.(0) <- 0.0;
 
     for i = 1 to n_rows do
       let i1 = i - 1 in
       if !in_subset.(i1) then (
         cum_z.(i) <- z.(i1) +. cum_z.(i1);
         cum_l.(i) <- l.(i1) +. cum_l.(i1);
-        cum_n.(i) <- 1      +  cum_n.(i1)
+        cum_n.(i) <- weights.(i) +. cum_n.(i1)
       )
       else (
         cum_z.(i) <- cum_z.(i1);
@@ -149,12 +149,9 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
 
           let z_diff = cum_z.(index_length) -. cum_z.(index) in
           let l_diff = cum_l.(index_length) -. cum_l.(index) in
-          let n_diff = cum_n.(index_length) -  cum_n.(index) in
+          let n_diff = cum_n.(index_length) -. cum_n.(index) in
 
-          assert ( n_diff >= 0 );
-
-          Aggregate.update agg ~value ~n:n_diff ~l:l_diff
-            ~z:z_diff
+          Aggregate.update agg ~value ~n:n_diff ~l:l_diff ~z:z_diff
       );
       agg
 
@@ -164,7 +161,7 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
       Dense.iter ~width:width_num_bytes v (
         fun ~index ~value ->
           if !in_subset.(index) then
-            Aggregate.update agg ~value ~n:1 ~l:l.(index)
+            Aggregate.update agg ~value ~n:weights.(index) ~l:l.(index)
               ~z:z.(index)
       );
       agg
@@ -181,12 +178,12 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
         f.(i) <- 0.0;
         cum_z.(i) <- 0.0;
         cum_l.(i) <- 0.0;
-        cum_n.(i) <- 0;
+        cum_n.(i) <- 0.0;
       done;
       (* cum's have one more element *)
       cum_z.(n_rows) <- 0.0;
       cum_l.(n_rows) <- 0.0;
-      cum_n.(n_rows) <- 0;
+      cum_n.(n_rows) <- 0.0;
       in_subset := [| |]
 
     (* update [f] and [zwl] based on [gamma] *)
@@ -194,7 +191,7 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
       let last_nan = ref None in
       Array.iteri (
         fun i gamma_i ->
-          if not exclude_set.(i) then (
+          if not (weights.(i) == 0.0) then (
             (* update [f.(i)] *)
             f.(i) <- f.(i) +. gamma_i;
 
@@ -259,7 +256,7 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
           let pseudo_response_sorted =
             Array.init cardinality (
               fun k ->
-                let n = float_of_int agg.sum_n.(k) in
+                let n = agg.sum_n.(k) in
                 let average_response = agg.sum_z.(k) /. n in
                 k, average_response
             )
@@ -298,7 +295,7 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
             let lk   = s_to_k.(ls)   in
             let lk_1 = s_to_k.(ls-1) in
 
-            left.sum_n.(lk) <- left.sum_n.(lk_1) +  agg.sum_n.(lk);
+            left.sum_n.(lk) <- left.sum_n.(lk_1) +. agg.sum_n.(lk);
             left.sum_z.(lk) <- left.sum_z.(lk_1) +. agg.sum_z.(lk);
             left.sum_l.(lk) <- left.sum_l.(lk_1) +. agg.sum_l.(lk);
 
@@ -306,7 +303,7 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
             let rk   = s_to_k.(rs)   in
             let rk_1 = s_to_k.(rs+1) in
 
-            right.sum_n.(rk) <- right.sum_n.(rk_1) +  agg.sum_n.(rk);
+            right.sum_n.(rk) <- right.sum_n.(rk_1) +. agg.sum_n.(rk);
             right.sum_z.(rk) <- right.sum_z.(rk_1) +. agg.sum_z.(rk);
             right.sum_l.(rk) <- right.sum_l.(rk_1) +. agg.sum_l.(rk);
 
@@ -327,10 +324,10 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
             (* we can only have a split when the left and right
                approximations are based on one or more observations *)
 
-            if left_n > 0 && right_n > 0 then (
+            if left_n > 0.0 && right_n > 0.0 then (
 
-              let left_gamma  = left.sum_z.(k)    /. (float left_n)  in
-              let right_gamma = right.sum_z.(k_1) /. (float right_n) in
+              let left_gamma  = left.sum_z.(k)    /. left_n  in
+              let right_gamma = right.sum_z.(k_1) /. right_n in
 
               let left_gamma, right_gamma =
                 Feat_utils.apply_max_gamma_opt ~max_gamma_opt left_gamma right_gamma
@@ -408,12 +405,12 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
 
           (* compute the cumulative sums *)
           for lk = 1 to last do
-            left.sum_n.(lk) <- left.sum_n.(lk-1) +  agg.sum_n.(lk);
+            left.sum_n.(lk) <- left.sum_n.(lk-1) +. agg.sum_n.(lk);
             left.sum_z.(lk) <- left.sum_z.(lk-1) +. agg.sum_z.(lk);
             left.sum_l.(lk) <- left.sum_l.(lk-1) +. agg.sum_l.(lk);
 
             let rk = cardinality - lk - 1 in
-            right.sum_n.(rk) <- right.sum_n.(rk+1) +  agg.sum_n.(rk);
+            right.sum_n.(rk) <- right.sum_n.(rk+1) +. agg.sum_n.(rk);
             right.sum_z.(rk) <- right.sum_z.(rk+1) +. agg.sum_z.(rk);
             right.sum_l.(rk) <- right.sum_l.(rk+1) +. agg.sum_l.(rk);
           done;
@@ -428,10 +425,10 @@ class splitter max_gamma_opt exclude_set y_feature n_rows num_observations =
             (* we can only have a split when the left and right
                approximations are based on one or more observations *)
 
-            if left_n > 0 && right_n > 0 then (
+            if left_n > 0.0 && right_n > 0.0 then (
 
-              let left_gamma  = left.sum_z.(k)    /. (float left_n)  in
-              let right_gamma = right.sum_z.(k+1) /. (float right_n) in
+              let left_gamma  = left.sum_z.(k)    /. left_n  in
+              let right_gamma = right.sum_z.(k+1) /. right_n in
 
               let left_gamma, right_gamma =
                 Feat_utils.apply_max_gamma_opt ~max_gamma_opt left_gamma right_gamma

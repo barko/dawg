@@ -21,6 +21,7 @@ type conf = {
   output_file_path : string;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
+  weight_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   max_gamma_opt : float option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
@@ -247,7 +248,7 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
 
   learn_with_fold_rate conf t iteration
 
-let folds_of_feature_name conf sampler feature_map n a_y_feature =
+let folds_and_weights conf sampler feature_map n a_y_feature =
   let y_feature_id = Feat_utils.id_of_feature a_y_feature in
   let folds, feature_map = match conf.fold_feature_opt with
     | None ->
@@ -262,7 +263,7 @@ let folds_of_feature_name conf sampler feature_map n a_y_feature =
 
       match Feat_map.find feature_map fold_feature with
         | [] ->
-          pr "feature %S to be used for fold assignment not found\n%!"
+          epr "[ERROR] feature %S to be used for fold assignment not found\n%!"
             (Feat_utils.string_of_feature_descr fold_feature);
           exit 1
 
@@ -321,7 +322,65 @@ let folds_of_feature_name conf sampler feature_map n a_y_feature =
               folds, feature_map
   in
 
+  let weights, feature_map = match conf.weight_feature_opt with
+    | None ->
+      (* all weights are set to 1.0 *)
+      let weights = Sampler.array (
+          fun ~index ~value ->
+            1.0
+        ) sampler in
+      weights, feature_map
+
+    | Some weight_feature ->
+      match Feat_map.find feature_map weight_feature with
+        | [] ->
+          epr "[ERROR] feature %S to be used for observation weights not found\n%!"
+            (Feat_utils.string_of_feature_descr weight_feature);
+          exit 1
+
+        | weight_features ->
+          let num_weight_features = List.length weight_features in
+          if num_weight_features > 1 then (
+            epr "[ERROR] There are %d weight features satisfying %s\n%!"
+              num_weight_features
+              (Feat_utils.string_of_feature_descr weight_feature);
+            exit 1
+          );
+
+          (* there is exactly one weight feature) *)
+          let i_weight_feature = List.hd weight_features in
+          let weight_feature_id = Feat_utils.id_of_feature i_weight_feature in
+          if weight_feature_id = y_feature_id then (
+            epr "[ERROR] weights feature and target feature must be different\n%!";
+            exit 1
+          );
+
+          (* weight feature found; use it *)
+          let a_weight_feature = Feat_map.i_to_a feature_map i_weight_feature in
+          let weights = Feat_utils.weights_of_afeature a_weight_feature in
+          (* remove all the weight_features from the [feature_map] *)
+          let feature_map =
+            List.fold_left (
+              fun feature_map_0 a_weight_feature ->
+                let weight_feature_id = Feat_utils.id_of_feature
+                  a_weight_feature in
+                let weight_feature_name = Feat_utils.name_of_feature a_weight_feature in
+                let () = match weight_feature_name with
+                  | Some name ->
+                    epr "[INFO] excluding weights feature %s (id: %d)\n%!"
+                      name weight_feature_id;
+                  | None ->
+                    epr "[INFO] excluding nameless weights feature (id: %d)\n%!"
+                      weight_feature_id;
+                in
+                Feat_map.remove feature_map_0 weight_feature_id
+            ) feature_map weight_features
+          in
+          weights, feature_map
+  in
+
   let y_array = Feat_utils.array_of_afeature a_y_feature in
+
   let () =
     if conf.exclude_inf_target || conf.exclude_nan_target then (
       epr "[INFO] exclude_inf_target=%b exclude_nan_target=%b\n%!"
@@ -349,7 +408,7 @@ let folds_of_feature_name conf sampler feature_map n a_y_feature =
         | _ -> ()
     )
   in
-  folds, feature_map
+  folds, weights, feature_map
 
 let learn conf =
   let dog_reader = Dog_io.RO.create conf.dog_file_path in
@@ -416,13 +475,14 @@ let learn conf =
   let sampler = Sampler.create n_rows in
   Sampler.shuffle sampler random_state;
 
-  let folds, feature_map =
-    folds_of_feature_name conf sampler feature_map n_rows a_y_feature
+  let folds, weights, feature_map =
+    folds_and_weights conf sampler feature_map n_rows a_y_feature
   in
   let exclude_set = Array.init n_rows (fun i -> folds.(i) < 0) in
   let excluded_observations =
     Array.fold_left (fun n b -> if b then succ n else n) 0 exclude_set
   in
+  Array.iteri (fun i ex -> if ex then weights.(i) <- 0.0) exclude_set;
   let num_observations = n_rows - excluded_observations in
 
   assert (
@@ -446,10 +506,10 @@ let learn conf =
       | `Logistic ->
         new Logistic.splitter
           conf.max_gamma_opt conf.binarization_threshold_opt
-          exclude_set a_y_feature n_rows num_observations
+          weights a_y_feature n_rows num_observations
       | `Square ->
         new Square.splitter
-          conf.max_gamma_opt exclude_set a_y_feature n_rows num_observations
+          conf.max_gamma_opt weights a_y_feature n_rows num_observations
   in
 
   let eval = Tree.mk_eval n_rows in
