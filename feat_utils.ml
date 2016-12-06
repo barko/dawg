@@ -221,12 +221,9 @@ let weights_of_afeature = function
       | `String _ -> assert false
       | `StringAnon _ -> assert false
       | `Int id_weight_array ->
-        let total = Array.fold_left (fun accu (id, w_int) -> accu + w_int) 0 id_weight_array in
-        let total = float total in
-        Array.map (fun (id, w_int) -> float w_int /. total) id_weight_array
+        Array.map (fun (id, w_int) -> float w_int) id_weight_array
       | `Float id_weight_array ->
-        let total = Array.fold_left (fun accu (id, w) -> accu +. w) 0.0 id_weight_array in
-        Array.map (fun (id, w) -> w /. total) id_weight_array
+        Array.map (fun (id, w) -> w) id_weight_array
 
 let vector f = function
   | `RLE rle -> `RLE (f rle)

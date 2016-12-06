@@ -1,3 +1,8 @@
+let pr = Printf.printf
+let epr = Printf.eprintf
+
+let add_to r x = r := !r +. x
+
 let divide_up n d =
   ((n - 1) / d) + 1
 

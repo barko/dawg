@@ -87,8 +87,8 @@ module Aggregate = struct
 
   let update t ~value ~n ~z ~l =
     t.sum_n.(value) <- t.sum_n.(value) +. n;
-    t.sum_z.(value) <- t.sum_z.(value) +. z;
-    t.sum_l.(value) <- t.sum_l.(value) +. l
+    t.sum_z.(value) <- t.sum_z.(value) +. n *. z;
+    t.sum_l.(value) <- t.sum_l.(value) +. n *. l
 
   let create cardinality = {
     sum_n = Array.make cardinality 0.0;
@@ -130,7 +130,7 @@ class splitter max_gamma_opt weights y_feature n_rows num_observations =
       if !in_subset.(i1) then (
         cum_z.(i) <- z.(i1) +. cum_z.(i1);
         cum_l.(i) <- l.(i1) +. cum_l.(i1);
-        cum_n.(i) <- weights.(i) +. cum_n.(i1)
+        cum_n.(i) <- weights.(i1) +. cum_n.(i1)
       )
       else (
         cum_z.(i) <- cum_z.(i1);
@@ -191,7 +191,8 @@ class splitter max_gamma_opt weights y_feature n_rows num_observations =
       let last_nan = ref None in
       Array.iteri (
         fun i gamma_i ->
-          if not (weights.(i) == 0.0) then (
+          let wi = weights.(i) in
+          if classify_float wi <> FP_zero then (
             (* update [f.(i)] *)
             f.(i) <- f.(i) +. gamma_i;
 
@@ -199,8 +200,8 @@ class splitter max_gamma_opt weights y_feature n_rows num_observations =
             let li = zi *. zi in
 
             (match classify_float zi with
-            | FP_normal -> ()
-            | _ -> last_nan := Some i
+              | FP_normal -> ()
+              | _ -> last_nan := Some i
             );
 
             z.(i) <- zi;
@@ -486,30 +487,32 @@ class splitter max_gamma_opt weights y_feature n_rows num_observations =
 
     method metrics ~in_set ~out_set =
       let wrk_loss = ref 0.0 in
-      let wrk_nn = ref 0 in
+      let wrk_nn = ref 0.0 in
       let val_loss = ref 0.0 in
-      let val_nn = ref 0 in
+      let val_nn = ref 0.0 in
 
       for i = 0 to n_rows - 1 do
         if in_set.(i) then (
-          incr wrk_nn;
-          wrk_loss := !wrk_loss +. l.(i)
+          Utils.add_to wrk_nn weights.(i);
+          Utils.add_to wrk_loss l.(i);
+          (* Utils.pr "[DEBUG] in_set i=%d w=%f l=%f z=%f wrk_nn=%f wrk_loss=%f\n%!" *)
+          (*   i weights.(i) l.(i) z.(i) !wrk_nn !wrk_loss *)
         )
         else if out_set.(i) then (
-          incr val_nn;
-          val_loss := !val_loss +. l.(i)
+          Utils.add_to val_nn weights.(i);
+          Utils.add_to val_loss l.(i);
+          (* Utils.pr "[DEBUG] out_set i=%d w=%f l=%f z=%f val_nn=%f val_loss=%f\n%!" *)
+          (*   i weights.(i) l.(i) z.(i) !val_nn !val_loss *)
         )
       done;
 
-      if !wrk_nn > 0 && !val_nn > 0 then
-        let wrk_nf = float !wrk_nn in
-        let wrk_loss = !wrk_loss /. wrk_nf in
+      if !wrk_nn > 0.0 && !val_nn > 0.0 then
+        let wrk_loss = !wrk_loss /. !wrk_nn in
 
-        let val_nf = float !val_nn in
-        let val_loss = !val_loss /. val_nf in
+        let val_loss = !val_loss /. !val_nn in
 
-        let s_wrk = Printf.sprintf "% 8d %.4e" !wrk_nn wrk_loss in
-        let s_val = Printf.sprintf "% 8d %.4e" !val_nn val_loss in
+        let s_wrk = Printf.sprintf "% 8.2f %.4e" !wrk_nn wrk_loss in
+        let s_val = Printf.sprintf "% 8.2f %.4e" !val_nn val_loss in
 
         Loss.( { s_wrk; s_val; has_converged = false; val_loss; } )
 
@@ -518,15 +521,15 @@ class splitter max_gamma_opt weights y_feature n_rows num_observations =
 
     method first_tree set : Model_t.l_tree =
       let sum_y = ref 0.0 in
-      let nn = ref 0 in
+      let nn = ref 0.0 in
       for i = 0 to n_rows - 1 do
-        if set.(i) then (
-          sum_y := y.(i) +. !sum_y;
-          incr nn;
-        )
+        if set.(i) then
+          let wi = weights.(i) in
+          Utils.add_to sum_y (wi *. y.(i));
+          Utils.add_to nn wi
       done;
-      assert (!nn > 0); (* TODO *)
-      let gamma0 = !sum_y /. (float !nn) in
+      assert (!nn > 0.0); (* TODO *)
+      let gamma0 = !sum_y /. !nn in
       `Leaf gamma0
 
     method write_model re_trees re_features out_buf =

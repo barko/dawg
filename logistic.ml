@@ -451,7 +451,7 @@ class splitter
       let last_nan = ref None in
       Array.iteri (
         fun i gamma_i ->
-          if not (weights.(i) = 0.0) then (
+          if classify_float weights.(i) <> FP_zero then (
             (* update [f.(i)] *)
             f.(i) <- f.(i) +. gamma_i;
 
@@ -760,19 +760,19 @@ class splitter
           !best_split
 
     method metrics ~in_set ~out_set =
-      let wrk_tt = ref 0 in
-      let wrk_tf = ref 0 in
-      let wrk_ft = ref 0 in
-      let wrk_ff = ref 0 in
+      let wrk_tt = ref 0.0 in
+      let wrk_tf = ref 0.0 in
+      let wrk_ft = ref 0.0 in
+      let wrk_ff = ref 0.0 in
       let wrk_loss = ref 0.0 in
-      let wrk_nn = ref 0 in
+      let wrk_nn = ref 0.0 in
 
-      let val_tt = ref 0 in
-      let val_tf = ref 0 in
-      let val_ft = ref 0 in
-      let val_ff = ref 0 in
+      let val_tt = ref 0.0 in
+      let val_tf = ref 0.0 in
+      let val_ft = ref 0.0 in
+      let val_ff = ref 0.0 in
       let val_loss = ref 0.0 in
-      let val_nn = ref 0 in
+      let val_nn = ref 0.0 in
 
       for i = 0 to n_rows - 1 do
         if in_set.(i) then
@@ -784,9 +784,10 @@ class splitter
               | false, true  -> wrk_ft
               | false, false -> wrk_ff
           in
-          incr cell;
-          incr wrk_nn;
-          wrk_loss := !wrk_loss +. l.(i)
+          let weights_i = weights.(i) in
+          Utils.add_to cell weights_i;
+          Utils.add_to wrk_nn weights_i;
+          Utils.add_to wrk_loss l.(i)
         else if out_set.(i) then
           (* validation fold *)
           let cell =
@@ -796,38 +797,37 @@ class splitter
               | false, true  -> val_ft
               | false, false -> val_ff
           in
-          incr cell;
-          incr val_nn;
-          val_loss := !val_loss +. l.(i)
+          let weights_i = weights.(i) in
+          Utils.add_to cell weights_i;
+          Utils.add_to val_nn weights_i;
+          Utils.add_to val_loss l.(i)
 
       done;
 
-      if !wrk_nn > 0 && !val_nn > 0 then
-        let wrk_nf = float !wrk_nn in
+      if !wrk_nn > 0.0 && !val_nn > 0.0 then
         let wrk_n = !wrk_nn in
-        let wrk_tt = (float !wrk_tt) /. wrk_nf in
-        let wrk_tf = (float !wrk_tf) /. wrk_nf in
-        let wrk_ft = (float !wrk_ft) /. wrk_nf in
-        let wrk_ff = (float !wrk_ff) /. wrk_nf in
-        let wrk_loss = !wrk_loss /. wrk_nf in
+        let wrk_tt = !wrk_tt /. wrk_n in
+        let wrk_tf = !wrk_tf /. wrk_n in
+        let wrk_ft = !wrk_ft /. wrk_n in
+        let wrk_ff = !wrk_ff /. wrk_n in
+        let wrk_loss = !wrk_loss /. wrk_n in
 
-        let val_nf = float !val_nn in
         let val_n = !val_nn in
-        let val_tt = (float !val_tt) /. val_nf in
-        let val_tf = (float !val_tf) /. val_nf in
-        let val_ft = (float !val_ft) /. val_nf in
-        let val_ff = (float !val_ff) /. val_nf in
-        let val_loss = !val_loss /. val_nf in
+        let val_tt = !val_tt /. val_n in
+        let val_tf = !val_tf /. val_n in
+        let val_ft = !val_ft /. val_n in
+        let val_ff = !val_ff /. val_n in
+        let val_loss = !val_loss /. val_n in
 
         let val_frac_misclassified = val_tf +. val_ft in
         assert ( val_frac_misclassified >= 0. );
 
         let has_converged = val_frac_misclassified = 0.0 in
 
-        let s_wrk = Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+        let s_wrk = Printf.sprintf "% 8.2f %.4e %.4e %.4e %.4e %.4e"
             wrk_n wrk_loss wrk_tt wrk_tf wrk_ft wrk_ff in
 
-        let s_val = Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+        let s_val = Printf.sprintf "% 8.2f %.4e %.4e %.4e %.4e %.4e"
             val_n val_loss val_tt val_tf val_ft val_ff in
 
         Loss.( {s_wrk; s_val; has_converged; val_loss} )
@@ -837,21 +837,21 @@ class splitter
 
     method first_tree set : Model_t.l_tree =
       assert (Array.length set = n_rows);
-      let n_true = ref 0 in
-      let n_false = ref 0 in
+      let n_true = ref 0.0 in
+      let n_false = ref 0.0 in
       for i = 0 to n_rows - 1 do
         if set.(i) then
           match y.(i) with
-            |  1.0 -> incr n_true
-            | -1.0 -> incr n_false
+            |  1.0 -> Utils.add_to n_true weights.(i)
+            | -1.0 -> Utils.add_to n_false weights.(i)
             | _ -> assert false
       done;
       let n_true = !n_true in
       let n_false = !n_false in
-      if n_false = 0 || n_true = 0 then
+      if n_false = 0.0 || n_true = 0.0 then
         raise Loss.BadTargetDistribution
       else
-        let gamma0 = 0.5 *. (log (float n_true /. float n_false)) in
+        let gamma0 = 0.5 *. (log (n_true /. n_false)) in
         `Leaf gamma0
 
     method write_model trees features out_buf =

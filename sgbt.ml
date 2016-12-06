@@ -1,8 +1,5 @@
 (** Friedman's Stochastic Gradient Boosting Trees *)
 
-let pr = Printf.printf
-let epr = Printf.eprintf
-
 let random_seed = [| 9271 ; 12074; 3; 12921; 92; 763 |]
 
 type loss_type = [ `Logistic | `Square ]
@@ -128,7 +125,7 @@ let rec learn_with_fold_rate conf t iteration =
 
       match t.splitter#boost gamma with
         | `NaN -> (
-            pr "diverged: nan\n%!";
+            Utils.pr "diverged: nan\n%!";
             cut_learning_rate conf t iteration
           )
 
@@ -143,7 +140,7 @@ let rec learn_with_fold_rate conf t iteration =
               iteration.convergence_rate_smoother convergence_rate in
           let convergence_rate_hat = Rls1.theta convergence_rate_smoother in
 
-          pr "iter % 3d % 7d  %s %s    %+.4e %+.4e\n%!"
+          Utils.pr "iter % 3d % 7d  %s %s    %+.4e %+.4e\n%!"
             iteration.fold
             iteration.i
             s_wrk
@@ -152,25 +149,25 @@ let rec learn_with_fold_rate conf t iteration =
             convergence_rate_hat;
 
           if has_converged then (
-            pr "converged: metrics indicate continuing is pointless\n";
+            Utils.pr "converged: metrics indicate continuing is pointless\n";
             `Converged (iteration.learning_rate, iteration.trees)
           )
           else if val_loss >= 2.0 *. iteration.prev_loss then (
-            pr "diverged: loss rose dramatically!\n";
+            Utils.pr "diverged: loss rose dramatically!\n";
             cut_learning_rate conf t iteration
           )
           else if iteration.timeout () then (
-            pr "timeout!\n";
+            Utils.pr "timeout!\n";
             `Timeout iteration.trees
           )
           else if exceed_max_trees iteration.i conf.max_trees_opt then (
             (* convergence, kinda *)
-            pr "tree limit constraint met\n";
+            Utils.pr "tree limit constraint met\n";
             `Converged (iteration.learning_rate, iteration.trees)
           )
           else if convergence_rate_hat < conf.min_convergence_rate then (
             (* convergence! *)
-            pr "converged: rate exceeded\n";
+            Utils.pr "converged: rate exceeded\n";
             `Converged (iteration.learning_rate, iteration.trees)
           )
           else
@@ -190,7 +187,7 @@ let rec learn_with_fold_rate conf t iteration =
 and cut_learning_rate conf t iteration =
   (* cut the learning rate in half and try again *)
   let learning_rate = 0.5 *. iteration.learning_rate in
-  pr "reducing learning rate from %f to %f\n"
+  Utils.pr "reducing learning rate from %f to %f\n"
     iteration.learning_rate learning_rate;
   let first_tree = iteration.first_tree in
   reset t first_tree;
@@ -216,7 +213,7 @@ let learn_with_fold conf t fold initial_learning_rate deadline =
     t.splitter#metrics ~in_set ~out_set
   in
 
-  pr "fold % 3d          %s %s\n%!" fold s_wrk s_val;
+  Utils.pr "fold % 3d          %s %s\n%!" fold s_wrk s_val;
 
   let new_random_seed = [| Random.int 10_000 |] in
 
@@ -263,14 +260,14 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
 
       match Feat_map.find feature_map fold_feature with
         | [] ->
-          epr "[ERROR] feature %S to be used for fold assignment not found\n%!"
+          Utils.epr "[ERROR] feature %S to be used for fold assignment not found\n%!"
             (Feat_utils.string_of_feature_descr fold_feature);
           exit 1
 
         | fold_features ->
           let num_fold_features = List.length fold_features in
           if num_fold_features > 1 then
-            pr "[WARNING] There are %d fold features satisfying %s\n%!"
+            Utils.pr "[WARNING] There are %d fold features satisfying %s\n%!"
               num_fold_features
               (Feat_utils.string_of_feature_descr fold_feature);
 
@@ -279,7 +276,7 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
           let i_fold_feature = List.hd fold_features in
           let fold_feature_id = Feat_utils.id_of_feature i_fold_feature in
           if fold_feature_id = y_feature_id then (
-            epr "[ERROR] Fold feature and target feature must be different\n%!";
+            Utils.epr "[ERROR] Fold feature and target feature must be different\n%!";
             exit 1
           );
 
@@ -288,14 +285,14 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
           match Feat_utils.folds_of_feature ~n ~num_folds:conf.num_folds
                   a_fold_feature with
             | `TooManyCategoricalFolds cardinality ->
-              epr "[ERROR] The cardinality of categorical feature %s is %d, which is \
+              Utils.epr "[ERROR] The cardinality of categorical feature %s is %d, which is \
                   too small relative to the number of folds %d\n%!"
                 (Feat_utils.string_of_feature_descr fold_feature)
                 cardinality conf.num_folds;
               exit 1
 
             | `TooManyOrdinalFolds cardinality ->
-              epr "[ERROR] The cardinality of ordinal feature %s is %d, which is \
+              Utils.epr "[ERROR] The cardinality of ordinal feature %s is %d, which is \
                   too small relative to the number of folds %d\n%!"
                 (Feat_utils.string_of_feature_descr fold_feature)
                 cardinality conf.num_folds;
@@ -311,10 +308,10 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
                     let fold_feature_name = Feat_utils.name_of_feature a_fold_feature in
                     let () = match fold_feature_name with
                       | Some name ->
-                        epr "[INFO] excluding fold feature %s (id: %d)\n%!"
+                        Utils.epr "[INFO] excluding fold feature %s (id: %d)\n%!"
                           name fold_feature_id;
                       | None ->
-                        epr "[INFO] excluding nameless fold feature (id: %d)\n%!"
+                        Utils.epr "[INFO] excluding nameless fold feature (id: %d)\n%!"
                           fold_feature_id;
                     in
                     Feat_map.remove feature_map_0 fold_feature_id
@@ -334,14 +331,14 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
     | Some weight_feature ->
       match Feat_map.find feature_map weight_feature with
         | [] ->
-          epr "[ERROR] feature %S to be used for observation weights not found\n%!"
+          Utils.epr "[ERROR] feature %S to be used for observation weights not found\n%!"
             (Feat_utils.string_of_feature_descr weight_feature);
           exit 1
 
         | weight_features ->
           let num_weight_features = List.length weight_features in
           if num_weight_features > 1 then (
-            epr "[ERROR] There are %d weight features satisfying %s\n%!"
+            Utils.epr "[ERROR] There are %d weight features satisfying %s\n%!"
               num_weight_features
               (Feat_utils.string_of_feature_descr weight_feature);
             exit 1
@@ -351,13 +348,28 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
           let i_weight_feature = List.hd weight_features in
           let weight_feature_id = Feat_utils.id_of_feature i_weight_feature in
           if weight_feature_id = y_feature_id then (
-            epr "[ERROR] weights feature and target feature must be different\n%!";
+            Utils.epr "[ERROR] weights feature and target feature must be different\n%!";
             exit 1
           );
 
           (* weight feature found; use it *)
           let a_weight_feature = Feat_map.i_to_a feature_map i_weight_feature in
           let weights = Feat_utils.weights_of_afeature a_weight_feature in
+          Array.iteri (fun i w ->
+            match classify_float w with
+              | FP_infinite ->
+                Utils.epr "[ERROR] Infinite weight for observation %d: %f" i w;
+                exit 2
+              | FP_nan ->
+                Utils.epr "[ERROR] NaN weight for observation %d" i;
+                exit 2
+              | FP_zero -> ()
+              | _ when w < 0.0 ->
+                Utils.epr "[ERROR] Negative weight for observation %d: %f" i w;
+                exit 2
+              | _ -> ()
+          ) weights;
+
           (* remove all the weight_features from the [feature_map] *)
           let feature_map =
             List.fold_left (
@@ -367,10 +379,10 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
                 let weight_feature_name = Feat_utils.name_of_feature a_weight_feature in
                 let () = match weight_feature_name with
                   | Some name ->
-                    epr "[INFO] excluding weights feature %s (id: %d)\n%!"
+                    Utils.epr "[INFO] excluding weights feature %s (id: %d)\n%!"
                       name weight_feature_id;
                   | None ->
-                    epr "[INFO] excluding nameless weights feature (id: %d)\n%!"
+                    Utils.epr "[INFO] excluding nameless weights feature (id: %d)\n%!"
                       weight_feature_id;
                 in
                 Feat_map.remove feature_map_0 weight_feature_id
@@ -383,7 +395,7 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
 
   let () =
     if conf.exclude_inf_target || conf.exclude_nan_target then (
-      epr "[INFO] exclude_inf_target=%b exclude_nan_target=%b\n%!"
+      Utils.epr "[INFO] exclude_inf_target=%b exclude_nan_target=%b\n%!"
         conf.exclude_inf_target conf.exclude_nan_target;
       match y_array with
         | `Float y_values ->
@@ -402,9 +414,9 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
           ) y_values;
           let n_rows = Array.length y_values in
           if !count_inf <> 0 then
-            epr "[WARNING] excluding %d inf rows out of %d\n%!" !count_inf n_rows;
+            Utils.epr "[WARNING] excluding %d inf rows out of %d\n%!" !count_inf n_rows;
           if !count_nan <> 0 then
-            epr "[WARNING] excluding %d nan rows out of %d\n%!" !count_nan n_rows
+            Utils.epr "[WARNING] excluding %d nan rows out of %d\n%!" !count_nan n_rows
         | _ -> ()
     )
   in
@@ -422,7 +434,7 @@ let learn conf =
 
   assert ( conf.num_folds > 0 );
   if conf.num_folds >= n_rows then (
-    pr "number of folds %d must be smaller than the number of observations \
+    Utils.epr "[ERROR] number of folds %d must be smaller than the number of observations \
         %d\n%!" conf.num_folds n_rows;
     exit 1
   );
@@ -430,12 +442,12 @@ let learn conf =
   let i_y_feature, a_y_feature =
     match Feat_map.find feature_map conf.y with
       | [] ->
-        pr "target %s not found\n%!"
+        Utils.epr "[ERROR] target %s not found\n%!"
           (Feat_utils.string_of_feature_descr conf.y);
         exit 1
 
       | (_ :: _ :: _) as y_features ->
-        pr "%d target features satisfying %s found; only one expected\n%!"
+        Utils.epr "[ERROR] %d target features satisfying %s found; only one expected\n%!"
           (List.length y_features)
           (Feat_utils.string_of_feature_descr conf.y);
         exit 1
@@ -498,7 +510,7 @@ let learn conf =
       | None -> true
   );
 
-  pr "features: included=%d excluded=%d\n%!"
+  Utils.pr "features: included=%d excluded=%d\n%!"
     (Feat_map.length feature_map) num_excluded_features;
 
   let splitter : Loss.splitter =
