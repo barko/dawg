@@ -12,6 +12,7 @@ type conf = {
   convergence_rate_smoother_forgetful_factor : float;
   deadline : float option;
   output_file_path : string;
+  selected_feature_name_regexp_opt : Pcre.regexp option;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   weight_feature_opt : Feat_utils.feature_descr option;

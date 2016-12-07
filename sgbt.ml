@@ -16,6 +16,7 @@ type conf = {
   convergence_rate_smoother_forgetful_factor : float;
   deadline : float option;
   output_file_path : string;
+  selected_feature_name_regexp_opt : Pcre.regexp option;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
   weight_feature_opt : Feat_utils.feature_descr option;
@@ -319,14 +320,14 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
               folds, feature_map
   in
 
-  let weights, feature_map = match conf.weight_feature_opt with
+  let weights = match conf.weight_feature_opt with
     | None ->
       (* all weights are set to 1.0 *)
       let weights = Sampler.array (
           fun ~index ~value ->
             1.0
         ) sampler in
-      weights, feature_map
+      weights
 
     | Some weight_feature ->
       match Feat_map.find feature_map weight_feature with
@@ -370,25 +371,7 @@ let folds_and_weights conf sampler feature_map n a_y_feature =
               | _ -> ()
           ) weights;
 
-          (* remove all the weight_features from the [feature_map] *)
-          let feature_map =
-            List.fold_left (
-              fun feature_map_0 a_weight_feature ->
-                let weight_feature_id = Feat_utils.id_of_feature
-                  a_weight_feature in
-                let weight_feature_name = Feat_utils.name_of_feature a_weight_feature in
-                let () = match weight_feature_name with
-                  | Some name ->
-                    Utils.epr "[INFO] excluding weights feature %s (id: %d)\n%!"
-                      name weight_feature_id;
-                  | None ->
-                    Utils.epr "[INFO] excluding nameless weights feature (id: %d)\n%!"
-                      weight_feature_id;
-                in
-                Feat_map.remove feature_map_0 weight_feature_id
-            ) feature_map weight_features
-          in
-          weights, feature_map
+          weights
   in
 
   let y_array = Feat_utils.array_of_afeature a_y_feature in
@@ -460,29 +443,6 @@ let learn conf =
   let feature_map = Feat_map.remove feature_map
       (Feat_utils.id_of_feature i_y_feature) in
 
-  (* remove excluded features, if any *)
-  let feature_map, num_excluded_features =
-    match conf.excluded_feature_name_regexp_opt with
-      | None -> feature_map, 0
-
-      | Some rex ->
-        let num_excluded = ref 0 in
-        let is_excluded feature =
-          match Feat_utils.name_of_feature feature with
-            | None -> false (* anonymous features cannot be excluded *)
-            | Some name ->
-              let is_ex = Pcre.pmatch ~rex name in
-              if is_ex then
-                incr num_excluded;
-              is_ex
-        in
-        let is_included _ feature =
-          not (is_excluded feature)
-        in
-        let feature_map = Feat_map.filter feature_map is_included in
-        feature_map, !num_excluded
-  in
-
   let random_state = Random.State.make random_seed in
   let sampler = Sampler.create n_rows in
   Sampler.shuffle sampler random_state;
@@ -490,6 +450,52 @@ let learn conf =
   let folds, weights, feature_map =
     folds_and_weights conf sampler feature_map n_rows a_y_feature
   in
+
+  let feature_map, num_excluded_features =
+    let num_excluded = ref 0 in
+
+    (* remove not-selected features, if any *)
+    let feature_map =
+      match conf.selected_feature_name_regexp_opt with
+        | None -> feature_map
+        | Some rex ->
+          let is_selected feature =
+            match Feat_utils.name_of_feature feature with
+            | None -> false (* anonymous features cannot be excluded *)
+            | Some name ->
+              let is_ex = Pcre.pmatch ~rex name in
+              if is_ex then
+                incr num_excluded;
+              is_ex
+          in
+          let is_included _ feature =
+            is_selected feature
+          in
+          Feat_map.filter feature_map is_included
+    in
+
+    (* remove excluded features, if any *)
+    let feature_map =
+      match conf.excluded_feature_name_regexp_opt with
+        | None -> feature_map
+        | Some rex ->
+          let is_excluded feature =
+            match Feat_utils.name_of_feature feature with
+            | None -> false (* anonymous features cannot be excluded *)
+            | Some name ->
+              let is_ex = Pcre.pmatch ~rex name in
+              if is_ex then
+                incr num_excluded;
+              is_ex
+          in
+          let is_included _ feature =
+            not (is_excluded feature)
+          in
+          Feat_map.filter feature_map is_included
+    in
+    feature_map, !num_excluded
+  in
+
   let exclude_set = Array.init n_rows (fun i -> folds.(i) < 0) in
   let excluded_observations =
     Array.fold_left (fun n b -> if b then succ n else n) 0 exclude_set
