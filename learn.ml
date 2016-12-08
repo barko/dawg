@@ -60,8 +60,10 @@ let learn
     loss_type_s
     max_trees_opt
     max_gamma_opt
-    lte_binarization_threshold
-    gte_binarization_threshold
+    binarize_lte
+    binarize_gte
+    binarize_lt
+    binarize_gt
     feature_name_positive
     feature_name_negative
     feature_id_positive
@@ -184,13 +186,15 @@ let learn
   in
 
   let binarization_threshold_opt =
-    match lte_binarization_threshold, gte_binarization_threshold with
-      | Some _, Some _ ->
-        epr "[ERROR] cannot specify both -gte and -lte binarization";
+    match binarize_lte, binarize_gte, binarize_lt, binarize_gt with
+      | Some lte, None, None, None -> Some (`LTE lte)
+      | None, Some gte, None, None -> Some (`GTE gte)
+      | None, None, Some lt, None -> Some (`LT lt)
+      | None, None, None, Some gt -> Some (`GT gt)
+      | None, None, None, None -> None
+      | _ ->
+        epr "[ERROR] cannot specify multiple options among -gte, -lte, -gt, -lt";
         exit 1
-      | Some lte, None -> Some (`LTE lte)
-      | None, Some gte -> Some (`GTE gte)
-      | None, None -> None
   in
 
   let positive_feature_ids =
@@ -458,6 +462,20 @@ let commands =
             info ["G"; "gte"; "binarization-threshold-gte"] ~docv:"FLOAT" ~doc)
     in
 
+    let binarize_lt =
+      let doc = "provide a binariziation threshold to an ordinal prediction \
+                 target.  The generated labels are \"LT\" and \"GTE\"" in
+      Arg.( value & opt (some float) None &
+            info ["lt"; "binarization-threshold-lt"] ~docv:"FLOAT" ~doc)
+    in
+
+    let binarize_gt =
+      let doc = "provide a binariziation threshold to an ordinal prediction \
+                 target.  The generated labels are \"GT\" and \"LTE\"" in
+      Arg.( value & opt (some float) None &
+            info ["gt"; "binarization-threshold-gt"] ~docv:"FLOAT" ~doc)
+    in
+
     let exclude_nan_target =
       let doc = "Exclude row where the target is a floating point nan" in
       Arg.(value & opt bool false & info ["exclude-nan-target"] ~docv:"BOOL" ~doc)
@@ -489,6 +507,8 @@ let commands =
             max_leaf_gamma $
             binarize_lte $
             binarize_gte $
+            binarize_lt $
+            binarize_gt $
             feature_name_positive $
             feature_name_negative $
             feature_id_positive $

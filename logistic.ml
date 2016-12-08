@@ -3,6 +3,8 @@ open Proto_t
 type binarization_threshold = [
   | `LTE of float (* positive label is LTE, negative case is GT *)
   | `GTE of float (* positive label is GTE, negative case is LT *)
+  | `LT of float (* positive label is LT, negative case is GTE *)
+  | `GT of float (* positive label is GT, negative case is LTE *)
 ]
 
 let logit ~f ~y = (* n is the weight of this observation *)
@@ -238,16 +240,28 @@ let y_array_of_binarize_ord binarization_threshold n ord =
       | `Float breakpoints, `GTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> breakpoints.(i) >= th), "GTE", Some "LT"
+      | `Float breakpoints, `GT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> breakpoints.(i) > th), "GT", Some "LTE"
       | `Float breakpoints, `LTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> breakpoints.(i) <= th), "LTE", Some "GT"
+      | `Float breakpoints, `LT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> breakpoints.(i) < th), "LT", Some "GTE"
 
       | `Int breakpoints, `GTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> float breakpoints.(i) >= th), "GTE", Some "LT"
+      | `Int breakpoints, `GT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> float breakpoints.(i) > th), "GT", Some "LTE"
       | `Int breakpoints, `LTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> float breakpoints.(i) <= th), "LTE", Some "GT"
+      | `Int breakpoints, `LT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> float breakpoints.(i) < th), "LT", Some "GTE"
   in
 
   (match o_vector with
