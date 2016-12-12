@@ -44,7 +44,7 @@ type point = {
   s_gamma : float ;
 
   (* how many observations does the split cover? *)
-  s_n : int ;
+  s_n : float ;
 
   (* what is the loss? *)
   s_loss  : float ;

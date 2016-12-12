@@ -1,3 +1,8 @@
+val pr : ('a, out_channel, unit) format -> 'a
+val epr : ('a, out_channel, unit) format -> 'a
+
+val add_to : float ref -> float -> unit
+
 val divide_up : int -> int -> int
 
 val rand_bools : float -> int -> bool list

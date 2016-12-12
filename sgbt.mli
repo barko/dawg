@@ -12,12 +12,16 @@ type conf = {
   convergence_rate_smoother_forgetful_factor : float;
   deadline : float option;
   output_file_path : string;
+  selected_feature_name_regexp_opt : Pcre.regexp option;
   excluded_feature_name_regexp_opt : Pcre.regexp option;
   fold_feature_opt : Feat_utils.feature_descr option;
+  weight_feature_opt : Feat_utils.feature_descr option;
   max_trees_opt : int option;
   max_gamma_opt : float option;
   binarization_threshold_opt : Logistic.binarization_threshold option;
   feature_monotonicity : feature_monotonicity;
+  exclude_nan_target : bool;
+  exclude_inf_target : bool;
 }
 
 val learn : conf -> unit

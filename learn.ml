@@ -2,8 +2,8 @@ module IntMap = Utils.IntMap
 module ISet = Utils.XSet(Utils.Int)
 module SSet = Utils.XSet(String)
 
-let pr fmt = Printf.printf (fmt ^^ "\n%!")
-let epr fmt = Printf.eprintf ("[ERROR]" ^^ fmt ^^ "\n%!")
+let pr = Utils.pr
+let epr = Utils.epr
 
 let seconds_of_string = function
   | RE (float as number : float ) ( 's' | 'S' ) -> (* seconds *)
@@ -23,7 +23,7 @@ let seconds_of_string = function
 let deadline_of_string str =
   match seconds_of_string str with
     | None ->
-      epr "%S is not a valid time-delta sepcifier" str;
+      epr "[ERROR] %S is not a valid time-delta sepcifier" str;
       exit 1
 
     | Some delta_seconds ->
@@ -34,7 +34,7 @@ let feature_descr_of_args name_opt id_opt =
   match name_opt, id_opt with
     | None, None -> None
     | Some _, Some _ ->
-      epr "can only specify the a feature by its name or its id, not both";
+      epr "[ERROR] can only specify the a feature by its name or its id, not both";
       exit 1
 
     | Some name, None -> Some (`Name name)
@@ -50,44 +50,51 @@ let learn
     num_folds
     fold_feature_name_opt
     fold_feature_id_opt
+    weight_feature_name_opt
+    weight_feature_id_opt
     convergence_rate_smoother_forgetful_factor
     deadline
     output_file_path
+    selected_feature_name_regexp
     excluded_feature_name_regexp
     loss_type_s
     max_trees_opt
     max_gamma_opt
-    lte_binarization_threshold
-    gte_binarization_threshold
+    binarize_lte
+    binarize_gte
+    binarize_lt
+    binarize_gt
     feature_name_positive
     feature_name_negative
     feature_id_positive
     feature_id_negative
+    exclude_nan_target
+    exclude_inf_target
   =
 
   if max_depth < 1 then (
-    epr "max-depth must be greater than 0";
+    epr "[ERROR] max-depth must be greater than 0";
     exit 1
   );
 
   if 0.0 >= initial_learning_rate || initial_learning_rate > 1.0 then (
-    epr "initial-learning-rate must be in (0,1]";
+    epr "[ERROR] initial-learning-rate must be in (0,1]";
     exit 1
   );
 
   if min_convergence_rate < 0.0 then (
-    epr "min-convergence-rate must be non-negative";
+    epr "[ERROR] min-convergence-rate must be non-negative";
     exit 1
   );
 
   if num_folds < 2 then (
-    epr "num-folds must be greater than one";
+    epr "[ERROR] num-folds must be greater than one";
     exit 1
   );
 
   if convergence_rate_smoother_forgetful_factor <= 0.0 ||     (* forget everything *)
      convergence_rate_smoother_forgetful_factor >= 1.0 then ( (* forget nothing *)
-    epr "forgetful-factor must be between 0 and 1, exclusive";
+    epr "[ERROR] forgetful-factor must be between 0 and 1, exclusive";
     exit 1
   );
 
@@ -95,7 +102,7 @@ let learn
     | None -> ()
     | Some max_trees ->
       if max_trees < 1 then (
-        epr "the maximum number of trees must be positive";
+        epr "[ERROR] the maximum number of trees must be positive";
         exit 1
       )
   );
@@ -104,10 +111,10 @@ let learn
     | None -> ()
     | Some max_gamma ->
       if max_gamma <= 0.0 then (
-        epr "the maximum leaf gamma must be positive";
+        epr "[ERROR] the maximum leaf gamma must be positive";
         exit 1
       ) else (
-        pr "[INFO] max-leaf-gamma = %f" max_gamma
+        epr "[INFO] max-leaf-gamma = %f" max_gamma
       )
   );
 
@@ -118,24 +125,36 @@ let learn
   in
 
   if not (Sys.file_exists dog_file_path) then (
-    epr "file %S does not exist!" dog_file_path;
+    epr "[ERROR] file %S does not exist!" dog_file_path;
     exit 1
   );
 
   let output_dir_name = Filename.dirname output_file_path in
   if not (Sys.file_exists output_dir_name) then (
-    epr "output directory %S does not exist!" output_dir_name;
+    epr "[ERROR] output directory %S does not exist!" output_dir_name;
     exit 1
   );
 
-  let regexp_opt =
+  let selected_regexp_opt =
+    match selected_feature_name_regexp with
+      | Some re -> (
+          try
+            epr "[INFO] Select feature regexp: %S\n%!" re;
+            Some (Pcre.regexp re)
+          with Pcre.Error _ ->
+            epr "[ERROR] bad regulalar expression %S" re;
+            exit 1
+        )
+      | None -> None
+  in
+  let excluded_regexp_opt =
     match excluded_feature_name_regexp with
       | Some re -> (
           try
-            pr "Exclude feature regexp: %S\n%!" re;
+            epr "[INFO] Exclude feature regexp: %S\n%!" re;
             Some (Pcre.regexp re)
           with Pcre.Error _ ->
-            epr "bad regulalar expression %S" re;
+            epr "[ERROR] bad regulalar expression %S" re;
             exit 1
         )
       | None -> None
@@ -146,14 +165,14 @@ let learn
       | "logistic"-> `Logistic
       | "square" -> `Square
       | _ ->
-        epr "bad loss type %S" loss_type_s;
+        epr "[ERROR] bad loss type %S" loss_type_s;
         exit 1
   in
 
   let y =
     match feature_descr_of_args y_name_opt y_id_opt with
       | None ->
-        epr "no target feature specified";
+        epr "[ERROR] no target feature specified";
         exit 1
       | Some y -> y
   in
@@ -162,14 +181,20 @@ let learn
     feature_descr_of_args fold_feature_name_opt fold_feature_id_opt
   in
 
+  let weight_feature_opt =
+    feature_descr_of_args weight_feature_name_opt weight_feature_id_opt
+  in
+
   let binarization_threshold_opt =
-    match lte_binarization_threshold, gte_binarization_threshold with
-      | Some _, Some _ ->
-        epr "cannot specify both -gte and -lte binarization";
+    match binarize_lte, binarize_gte, binarize_lt, binarize_gt with
+      | Some lte, None, None, None -> Some (`LTE lte)
+      | None, Some gte, None, None -> Some (`GTE gte)
+      | None, None, Some lt, None -> Some (`LT lt)
+      | None, None, None, Some gt -> Some (`GT gt)
+      | None, None, None, None -> None
+      | _ ->
+        epr "[ERROR] cannot specify multiple options among -gte, -lte, -gt, -lt";
         exit 1
-      | Some lte, None -> Some (`LTE lte)
-      | None, Some gte -> Some (`GTE gte)
-      | None, None -> None
   in
 
   let positive_feature_ids =
@@ -229,12 +254,16 @@ let learn
       max_depth;
       deadline;
       output_file_path;
-      excluded_feature_name_regexp_opt = regexp_opt;
+      selected_feature_name_regexp_opt = selected_regexp_opt;
+      excluded_feature_name_regexp_opt = excluded_regexp_opt;
       fold_feature_opt;
+      weight_feature_opt;
       max_trees_opt;
       max_gamma_opt;
       binarization_threshold_opt;
       feature_monotonicity;
+      exclude_nan_target;
+      exclude_inf_target;
     }
   in
 
@@ -242,11 +271,11 @@ let learn
     Sgbt.learn conf
   with
     | Loss.WrongTargetType ->
-      epr "target %s is not binary\n%!"
+      epr "[ERROR] target %s is not binary\n%!"
         (Feat_utils.string_of_feature_descr y);
       exit 1
     | Loss.BadTargetDistribution ->
-      epr "target %s has a bad distribution\n%!"
+      epr "[ERROR] target %s has a bad distribution\n%!"
         (Feat_utils.string_of_feature_descr y);
       exit 1
 
@@ -316,6 +345,20 @@ let commands =
            info ["f-id";"fold-feature-id"] ~docv:"INT" ~doc )
     in
 
+    let weight_feature_name =
+      let doc = "select a real valued feature by name representing \
+                 observation weights." in
+      Arg.(value & opt (some string) None &
+           info ["w";"weight-feature-name"] ~docv:"STRING" ~doc )
+    in
+
+    let weight_feature_id =
+      let doc = "select a real valued feature by name representing \
+                 observation weights." in
+      Arg.(value & opt (some int) None &
+           info ["w-id";"weight-feature-id"] ~docv:"INT" ~doc )
+    in
+
     let feature_name_positive =
       let doc = "Constrain feature to have a monotonic non-decreasing marginal \
                  relationship with the response variable" in
@@ -370,9 +413,17 @@ let commands =
            info ["o";"output"] ~docv:"PATH" ~doc)
     in
 
+    let selected_feature_name_regexp =
+      let doc = "regular expression of names of features to select for \
+                 learning; default is to select all features" in
+      Arg.(value & opt (some string) None &
+           info ["s";"select"] ~docv:"STRING" ~doc)
+    in
+
     let excluded_feature_name_regexp =
       let doc = "regular expression of names of features to exclude from \
-                 learning" in
+                 learning from among the selected features; default is to \
+                 exclude no features" in
       Arg.(value & opt (some string) None &
            info ["x";"exclude"] ~docv:"STRING" ~doc)
     in
@@ -411,6 +462,29 @@ let commands =
             info ["G"; "gte"; "binarization-threshold-gte"] ~docv:"FLOAT" ~doc)
     in
 
+    let binarize_lt =
+      let doc = "provide a binariziation threshold to an ordinal prediction \
+                 target.  The generated labels are \"LT\" and \"GTE\"" in
+      Arg.( value & opt (some float) None &
+            info ["lt"; "binarization-threshold-lt"] ~docv:"FLOAT" ~doc)
+    in
+
+    let binarize_gt =
+      let doc = "provide a binariziation threshold to an ordinal prediction \
+                 target.  The generated labels are \"GT\" and \"LTE\"" in
+      Arg.( value & opt (some float) None &
+            info ["gt"; "binarization-threshold-gt"] ~docv:"FLOAT" ~doc)
+    in
+
+    let exclude_nan_target =
+      let doc = "Exclude row where the target is a floating point nan" in
+      Arg.(value & opt bool false & info ["exclude-nan-target"] ~docv:"BOOL" ~doc)
+    in
+    let exclude_inf_target =
+      let doc = "Exclude row where the target is a floating point infinity" in
+      Arg.(value & opt bool false & info ["exclude-inf-target"] ~docv:"BOOL" ~doc)
+    in
+
     Term.(pure learn $
             input_file_path $
             y_name $
@@ -421,19 +495,26 @@ let commands =
             num_folds $
             fold_feature_name $
             fold_feature_id $
+            weight_feature_name $
+            weight_feature_id $
             convergence_rate_smoother_forgetful_factor $
             deadline $
             output_file_path $
+            selected_feature_name_regexp $
             excluded_feature_name_regexp $
             loss_type $
             max_trees $
             max_leaf_gamma $
             binarize_lte $
             binarize_gte $
+            binarize_lt $
+            binarize_gt $
             feature_name_positive $
             feature_name_negative $
             feature_id_positive $
-            feature_id_negative
+            feature_id_negative $
+            exclude_nan_target $
+            exclude_inf_target
          ),
     Term.info "learn" ~doc
   in

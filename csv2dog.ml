@@ -333,10 +333,10 @@ let categorical_feature j kc hist n i_values feature_id_to_name config =
         category_to_count, num_categories + 1
     ) hist ([], 0) in
 
-  if n_anonymous = 0 then
-    if num_categories = 1 then
-      `Uniform
-    else (
+  if n_anonymous = 0 then (
+    (* if num_categories = 1 then *)
+    (*   `Uniform *)
+    (* else ( *)
       (* sort so that categories with lower counts first *)
       let category_to_count = List.sort (
           fun (_, count1) (_, count2) ->
@@ -569,9 +569,9 @@ let float_or_int_feature
     let hist_list, num_distinct_values = unbox_listify_distinct_value_to_count
         float_of_value hist in
 
-    if num_distinct_values = 1 then
-      `Uniform
-    else
+    (* if num_distinct_values = 1 then *)
+    (*   `Uniform *)
+    (* else *)
       let uncapped_width = Utils.width num_distinct_values in
       let breakpoints =
         if uncapped_width <= max_width then
@@ -599,9 +599,9 @@ let float_or_int_feature
     let hist_list, num_distinct_values = unbox_listify_distinct_value_to_count
         int_of_value hist in
 
-    if num_distinct_values = 1 then
-      `Uniform
-    else
+    (* if num_distinct_values = 1 then *)
+    (*   `Uniform *)
+    (* else *)
       let uncapped_width = Utils.width num_distinct_values in
 
       if uncapped_width <= max_width then

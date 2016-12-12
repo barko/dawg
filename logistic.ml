@@ -3,49 +3,113 @@ open Proto_t
 type binarization_threshold = [
   | `LTE of float (* positive label is LTE, negative case is GT *)
   | `GTE of float (* positive label is GTE, negative case is LT *)
+  | `LT of float (* positive label is LT, negative case is GTE *)
+  | `GT of float (* positive label is GT, negative case is LTE *)
 ]
 
-let logit ~f ~y =
+let wavg ~p pos neg = p *. pos +. (1.0 -. p) *. neg
+
+(* p: probability of a positive case *)
+let logit ~f ~p =
 
   let f2 = -2.0 *. f in
   let ef2 = exp f2 in (* $\exp (-2 f)$ *)
 
   (* $\exp( -2 y f ) = (\exp (-2 f))^y $ *)
-  let e =
-    if y = 1.0 then
-      ef2
-    else
-      (1. /. ef2)
-  in
+  let e_p = ef2 in
+  let e_n = 1.0 /. ef2 in
+  (*   if y = 1.0 then *)
+  (*     ef2 *)
+  (*   else *)
+  (*     (1. /. ef2) *)
+  (* in *)
 
-  let y2f = y *. f2 in
-  let loss =
-    (* $\log(1 + \exp x)) = x$ as $x \rightarrow \infinity$ *)
-    if y2f > 35.0 then
-      y2f
+  (* let y2f = y *. f2 in *)
+  let y2f_p = f2 in
+  let y2f_n = ~-.f2 in
+
+  (* let loss = *)
+  (*   (\* $\log(1 + \exp x)) = x$ as $x \rightarrow \infinity$ *\) *)
+  (*   if y2f > 35.0 then *)
+  (*     y2f *)
+  (*   else *)
+  (*     log ( 1.0 +. e ) *)
+  (* in *)
+
+  (* $\log(1 + \exp x)) = x$ as $x \rightarrow \infinity$ *)
+  let loss_p =
+    if p = 0.0 then 0.0
+    else if y2f_p > 35.0 then
+      y2f_p
     else
-      log ( 1.0 +. e )
+      log ( 1.0 +. e_p )
   in
+  let loss_n =
+    if p = 1.0 then 0.0
+    else if y2f_n > 35.0 then
+      y2f_n
+    else
+      log ( 1.0 +. e_n )
+  in
+  let loss = wavg ~p loss_p loss_n in
 
   (* let p = 1. /. ( 1. +. ef2 ) in *)
 
-  match classify_float e with
-    | FP_nan ->
+  match classify_float e_p, classify_float e_n with
+    | FP_nan, _
+    | _, FP_nan ->
       `NaN
 
-    | FP_infinite ->
+    | FP_infinite, _ ->
       (* in the limit *)
-      let z = 2.0 *. y in
-      let abs_z = abs_float z in
-      let w = abs_z *. ( 2.0 -. abs_z ) in
+      let z_p = 2.0 in
+      let w_p = 0.0 in
+
+      let z_n = ( -2.0 *. e_n ) /. ( e_n +. 1.0 ) in
+      let abs_z_n = abs_float z_n in
+      let w_n = abs_z_n *. ( 2.0 -. abs_z_n ) in
+
+      let z = wavg ~p z_p z_n in
+      let w = wavg ~p w_p w_n in
+      `Number (loss, z, w)
+
+    | _, FP_infinite ->
+      (* in the limit *)
+      let z_p = ( 2.0 *. e_p ) /. ( e_p +. 1.0 ) in
+      let abs_z_p = abs_float z_p in
+      let w_p = abs_z_p *. ( 2.0 -. abs_z_p ) in
+
+      let z_n = -2.0 in
+      let w_n =  0.0 in
+
+      let z = wavg ~p z_p z_n in
+      let w = wavg ~p w_p w_n in
       `Number (loss, z, w)
 
     | _ ->
-      let z = ( 2.0 *. y *. e ) /. ( e +. 1.0 ) in
-      let abs_z = abs_float z in
-      let w = abs_z *. ( 2.0 -. abs_z ) in
+      let z_p = ( 2.0 *. e_p ) /. ( e_p +. 1.0 ) in
+      let abs_z_p = abs_float z_p in
+      let w_p = abs_z_p *. ( 2.0 -. abs_z_p ) in
+
+      let z_n = ( -2.0 *. e_n ) /. ( e_n +. 1.0 ) in
+      let abs_z_n = abs_float z_n in
+      let w_n = abs_z_n *. ( 2.0 -. abs_z_n ) in
+
+      let z = wavg ~p z_p z_n in
+      let w = wavg ~p w_p w_n in
       `Number (loss, z, w)
 
+    (* | FP_infinite -> *)
+    (*   (\* in the limit *\) *)
+    (*   let z = 2.0 *. y in *)
+    (*   let abs_z = abs_float z in *)
+    (*   let w = abs_z *. ( 2.0 -. abs_z ) in *)
+
+    (* | _ -> *)
+    (*   let z = ( 2.0 *. y *. e ) /. ( e +. 1.0 ) in *)
+    (*   let abs_z = abs_float z in *)
+    (*   let w = abs_z *. ( 2.0 -. abs_z ) in *)
+    (*   `Number (loss, z, w) *)
 
 let probability f =
   let f2 = -2.0 *. f in
@@ -54,7 +118,7 @@ let probability f =
 
 
 type metrics = {
-  n : int;
+  n : float; (* Weights can be fractional *)
   tt : float;
   tf : float;
   ft : float;
@@ -79,17 +143,26 @@ type s = {
 
 
 let string_of_metrics { n; loss; tt; tf; ft; ff } =
-  Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+  Printf.sprintf "% 8.2f %.4e %.4e %.4e %.4e %.4e"
     n loss tt tf ft ff
 
-let zero_one_to_minus_plus_one = function
-  | 0 -> -.1.
-  | 1 ->   1.
+(* let zero_one_to_minus_plus_one = function *)
+(*   | 0 -> -.1. *)
+(*   | 1 ->   1. *)
+(*   | _ -> assert false *)
+
+(* let bool_to_minus_plus_one = function *)
+(*   | false -> -1.0 *)
+(*   | true -> 1.0 *)
+
+let zero_one_to_zero_one = function
+  | 0 -> 0.0
+  | 1 -> 1.0
   | _ -> assert false
 
-let bool_to_minus_plus_one = function
+let bool_to_zero_one = function
+  | false -> 0.0
   | true -> 1.0
-  | false -> -1.0
 
 let y_array_of_cat n cat =
   let open Dog_t in
@@ -139,7 +212,7 @@ let y_array_of_cat n cat =
           | `RLE rle ->
             Rlevec.iter rle (
               fun ~index ~length ~value ->
-                let mp_one = zero_one_to_minus_plus_one value in
+                let mp_one = zero_one_to_zero_one value in
                 for i = index to index + length - 1 do
                   y.(i) <- mp_one
                 done
@@ -149,7 +222,7 @@ let y_array_of_cat n cat =
             let width = Utils.num_bytes cat.c_cardinality in
             Dense.iter ~width vec (
               fun ~index ~value ->
-                let mp_one = zero_one_to_minus_plus_one value in
+                let mp_one = zero_one_to_zero_one value in
                 y.(index) <- mp_one
             );
       );
@@ -163,37 +236,32 @@ let y_array_of_ord n ord =
   let open Dog_t in
   let { o_vector; o_breakpoints; o_cardinality } = ord in
   let y = Array.make n nan in
-  let map, positive_category, negative_category_opt =
-    if o_cardinality = 2 then
-      match o_breakpoints with
-        | `Float breakpoints -> (
-            match breakpoints with
-              | [v0; v1] ->
-                zero_one_to_minus_plus_one,
-                string_of_float v1,
-                Some (string_of_float v0)
-              | _ -> assert false
-          )
-
-        | `Int breakpoints -> (
-            match breakpoints with
-              | [v0; v1] ->
-                zero_one_to_minus_plus_one,
-                string_of_int v1,
-                Some (string_of_int v0)
-              | _ -> assert false
-          )
-    else
-      raise Loss.WrongTargetType
+  let positive_category, negative_category_opt =
+    match o_breakpoints with
+      | `Float breakpoints -> "1.0", Some "0.0"
+      | `Int breakpoints when o_cardinality = 2 -> (
+        match breakpoints with
+          | [v0; v1] ->
+            string_of_int v1,
+            Some (string_of_int v0)
+          | _ -> assert false
+        )
+      | _ -> raise Loss.WrongTargetType
   in
 
   (match o_vector with
     | `RLE rle -> (
         match o_breakpoints with
           | `Float breakpoints ->
+            let breakpoints = Array.of_list breakpoints in
             Rlevec.iter rle (
               fun ~index ~length ~value ->
-                let mp_one = map value in
+                let mp_one = breakpoints.(value) in
+                if mp_one < 0.0 || mp_one > 1.0 then (
+                  Utils.epr "[ERROR] %f (row %d) is not a valid label for logistic regression\n%!"
+                    mp_one index;
+                  exit 1
+                );
                 for i = index to index + length - 1 do
                   y.(i) <- mp_one
                 done
@@ -202,7 +270,7 @@ let y_array_of_ord n ord =
           | `Int breakpoints ->
             Rlevec.iter rle (
               fun ~index ~length ~value ->
-                let mp_one = map value in
+                let mp_one = zero_one_to_zero_one value in
                 for i = index to index + length - 1 do
                   y.(i) <- mp_one
                 done
@@ -213,16 +281,22 @@ let y_array_of_ord n ord =
         let width = Utils.num_bytes o_cardinality in
         match o_breakpoints with
           | `Float breakpoints ->
+            let breakpoints = Array.of_list breakpoints in
             Dense.iter ~width vec (
               fun ~index ~value ->
-                let mp_one = map value in
+                let mp_one = breakpoints.(value) in
+                if mp_one < 0.0 || mp_one > 1.0 then (
+                  Utils.epr "[ERROR] %f (row %d) is not a valid label for logistic regression\n%!"
+                    mp_one index;
+                  exit 1
+                );
                 y.( index ) <- mp_one
             );
 
           | `Int breakpoints ->
             Dense.iter ~width vec (
               fun ~index ~value ->
-                let mp_one = map value in
+                let mp_one = zero_one_to_zero_one value in
                 y.( index ) <- mp_one
             );
       )
@@ -238,16 +312,28 @@ let y_array_of_binarize_ord binarization_threshold n ord =
       | `Float breakpoints, `GTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> breakpoints.(i) >= th), "GTE", Some "LT"
+      | `Float breakpoints, `GT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> breakpoints.(i) > th), "GT", Some "LTE"
       | `Float breakpoints, `LTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> breakpoints.(i) <= th), "LTE", Some "GT"
+      | `Float breakpoints, `LT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> breakpoints.(i) < th), "LT", Some "GTE"
 
       | `Int breakpoints, `GTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> float breakpoints.(i) >= th), "GTE", Some "LT"
+      | `Int breakpoints, `GT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> float breakpoints.(i) > th), "GT", Some "LTE"
       | `Int breakpoints, `LTE th ->
         let breakpoints = Array.of_list breakpoints in
         (fun i -> float breakpoints.(i) <= th), "LTE", Some "GT"
+      | `Int breakpoints, `LT th ->
+        let breakpoints = Array.of_list breakpoints in
+        (fun i -> float breakpoints.(i) < th), "LT", Some "GTE"
   in
 
   (match o_vector with
@@ -256,7 +342,7 @@ let y_array_of_binarize_ord binarization_threshold n ord =
           | `Float breakpoints ->
             Rlevec.iter rle (
               fun ~index ~length ~value ->
-                let mp_one = bool_to_minus_plus_one (map value) in
+                let mp_one = bool_to_zero_one (map value) in
                 for i = index to index + length - 1 do
                   y.(i) <- mp_one
                 done
@@ -265,7 +351,7 @@ let y_array_of_binarize_ord binarization_threshold n ord =
           | `Int breakpoints ->
             Rlevec.iter rle (
               fun ~index ~length ~value ->
-                let mp_one = bool_to_minus_plus_one (map value) in
+                let mp_one = bool_to_zero_one (map value) in
                 for i = index to index + length - 1 do
                   y.(i) <- mp_one
                 done
@@ -278,14 +364,14 @@ let y_array_of_binarize_ord binarization_threshold n ord =
           | `Float breakpoints ->
             Dense.iter ~width vec (
               fun ~index ~value ->
-                let mp_one = bool_to_minus_plus_one (map value) in
+                let mp_one = bool_to_zero_one (map value) in
                 y.( index ) <- mp_one
             );
 
           | `Int breakpoints ->
             Dense.iter ~width vec (
               fun ~index ~value ->
-                let mp_one = bool_to_minus_plus_one (map value) in
+                let mp_one = bool_to_zero_one (map value) in
                 y.( index ) <- mp_one
             );
       )
@@ -320,20 +406,20 @@ let y_array_of_feature binarization_threshold_opt y_feature n =
 
 module Aggregate = struct
   type t = {
-    sum_n : int array;
+    sum_n : float array;
     sum_z : float array;
     sum_w : float array;
     sum_l : float array;
   }
 
   let update t ~value ~n ~z ~w ~l =
-    t.sum_n.(value) <- t.sum_n.(value) +  n;
+    t.sum_n.(value) <- t.sum_n.(value) +. n;
     t.sum_z.(value) <- t.sum_z.(value) +. z;
     t.sum_w.(value) <- t.sum_w.(value) +. w;
     t.sum_l.(value) <- t.sum_l.(value) +. l
 
   let create cardinality = {
-    sum_n = Array.make cardinality 0;
+    sum_n = Array.make cardinality 0.0;
     sum_z = Array.make cardinality 0.0;
     sum_w = Array.make cardinality 0.0;
     sum_l = Array.make cardinality 0.0;
@@ -347,21 +433,28 @@ let updated_loss ~gamma  ~sum_l ~sum_z ~sum_w =
 
 exception EmptyFold
 
-class splitter max_gamma_opt binarization_threshold_opt y_feature n =
+class splitter
+  max_gamma_opt
+  binarization_threshold_opt
+  weights
+  y_feature
+  n_rows
+  num_observations
+  =
   let y, positive_category, negative_category_opt =
-    y_array_of_feature binarization_threshold_opt y_feature n in
+    y_array_of_feature binarization_threshold_opt y_feature n_rows in
 
-  let z = Array.make n 0.0 in
-  let w = Array.make n 0.0 in
-  let l = Array.make n 0.0 in
-  let f = Array.make n 0.0 in
+  let z = Array.make n_rows 0.0 in
+  let w = Array.make n_rows 0.0 in
+  let l = Array.make n_rows 0.0 in
+  let f = Array.make n_rows 0.0 in
 
-  let n1 = n + 1 in
+  let n1 = n_rows + 1 in
 
   let cum_z = Array.make n1 0.0 in
   let cum_w = Array.make n1 0.0 in
   let cum_l = Array.make n1 0.0 in
-  let cum_n = Array.make n1 0 in
+  let cum_n = Array.make n1 0.0 in
 
   let in_subset = ref [| |] in
 
@@ -369,15 +462,15 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
     cum_z.(0) <- 0.0;
     cum_w.(0) <- 0.0;
     cum_l.(0) <- 0.0;
-    cum_n.(0) <- 0;
+    cum_n.(0) <- 0.0;
 
-    for i = 1 to n do
+    for i = 1 to n_rows do
       let i1 = i - 1 in
       if !in_subset.(i1) then (
         cum_z.(i) <- z.(i1) +. cum_z.(i1);
         cum_w.(i) <- w.(i1) +. cum_w.(i1);
         cum_l.(i) <- l.(i1) +. cum_l.(i1);
-        cum_n.(i) <- 1      +  cum_n.(i1)
+        cum_n.(i) <- weights.(i1) +.  cum_n.(i1)
       )
       else (
         cum_z.(i) <- cum_z.(i1);
@@ -398,9 +491,7 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
           let z_diff = cum_z.(index_length) -. cum_z.(index) in
           let w_diff = cum_w.(index_length) -. cum_w.(index) in
           let l_diff = cum_l.(index_length) -. cum_l.(index) in
-          let n_diff = cum_n.(index_length) -  cum_n.(index) in
-
-          assert ( n_diff >= 0 );
+          let n_diff = cum_n.(index_length) -. cum_n.(index) in
 
           Aggregate.update agg ~value ~n:n_diff ~l:l_diff
             ~z:z_diff ~w:w_diff
@@ -413,7 +504,7 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
       Dense.iter ~width:width_num_bytes v (
         fun ~index ~value ->
           if !in_subset.(index) then
-            Aggregate.update agg ~value ~n:1 ~l:l.(index)
+            Aggregate.update agg ~value ~n:weights.(index) ~l:l.(index)
               ~z:z.(index) ~w:w.(index)
       );
       agg
@@ -421,11 +512,10 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
   in
 
   object
-    method num_observations =
-      n
+    method num_observations : int = num_observations
 
     method clear =
-      for i = 0 to n-1 do
+      for i = 0 to n_rows - 1 do
         z.(i) <- 0.0;
         w.(i) <- 0.0;
         l.(i) <- 0.0;
@@ -433,13 +523,13 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
         cum_z.(i) <- 0.0;
         cum_w.(i) <- 0.0;
         cum_l.(i) <- 0.0;
-        cum_n.(i) <- 0;
+        cum_n.(i) <- 0.0;
       done;
       (* cum's have one more element *)
-      cum_z.(n) <- 0.0;
-      cum_w.(n) <- 0.0;
-      cum_l.(n) <- 0.0;
-      cum_n.(n) <- 0;
+      cum_z.(n_rows) <- 0.0;
+      cum_w.(n_rows) <- 0.0;
+      cum_l.(n_rows) <- 0.0;
+      cum_n.(n_rows) <- 0.0;
       in_subset := [| |]
 
     (* update [f] and [zwl] based on [gamma] *)
@@ -447,22 +537,24 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
       let last_nan = ref None in
       Array.iteri (
         fun i gamma_i ->
+          if classify_float weights.(i) <> FP_zero then (
+            (* update [f.(i)] *)
+            f.(i) <- f.(i) +. gamma_i;
 
-          (* update [f.(i)] *)
-          f.(i) <- f.(i) +. gamma_i;
+            let weight_i = weights.(i) in
+            let p = y.(i) in
+            let li, zi, wi =
+              match logit ~f:f.(i) ~p with
+                | `Number lzw -> lzw
+                | `NaN ->
+                  last_nan := Some i;
+                  (nan,nan,nan)
+            in
 
-          let li, zi, wi =
-            match logit ~f:f.(i) ~y:y.(i) with
-              | `Number lzw -> lzw
-              | `NaN ->
-                last_nan := Some i;
-                (nan,nan,nan)
-          in
-
-          z.(i) <- zi;
-          w.(i) <- wi;
-          l.(i) <- li;
-
+            z.(i) <- zi *. weight_i;
+            w.(i) <- wi *. weight_i;
+            l.(i) <- li *. weight_i;
+          )
       ) gamma;
       match !last_nan with
         | Some _ -> `NaN
@@ -513,7 +605,7 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
           let pseudo_response_sorted =
             Array.init cardinality (
               fun k ->
-                let n = float_of_int agg.sum_n.(k) in
+                let n = agg.sum_n.(k) in
                 let average_response = agg.sum_z.(k) /. n in
                 k, average_response
             )
@@ -554,7 +646,7 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
             let lk   = s_to_k.(ls)   in
             let lk_1 = s_to_k.(ls-1) in
 
-            left.sum_n.(lk) <- left.sum_n.(lk_1) +  agg.sum_n.(lk);
+            left.sum_n.(lk) <- left.sum_n.(lk_1) +. agg.sum_n.(lk);
             left.sum_z.(lk) <- left.sum_z.(lk_1) +. agg.sum_z.(lk);
             left.sum_w.(lk) <- left.sum_w.(lk_1) +. agg.sum_w.(lk);
             left.sum_l.(lk) <- left.sum_l.(lk_1) +. agg.sum_l.(lk);
@@ -563,7 +655,7 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
             let rk   = s_to_k.(rs)   in
             let rk_1 = s_to_k.(rs+1) in
 
-            right.sum_n.(rk) <- right.sum_n.(rk_1) +  agg.sum_n.(rk);
+            right.sum_n.(rk) <- right.sum_n.(rk_1) +. agg.sum_n.(rk);
             right.sum_z.(rk) <- right.sum_z.(rk_1) +. agg.sum_z.(rk);
             right.sum_w.(rk) <- right.sum_w.(rk_1) +. agg.sum_w.(rk);
             right.sum_l.(rk) <- right.sum_l.(rk_1) +. agg.sum_l.(rk);
@@ -585,8 +677,8 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
             (* we can only have a split when the left and right
                approximations are based on one or more observations *)
 
-            if left_n > 0 &&
-               right_n > 0 &&
+            if left_n > 0.0 &&
+               right_n > 0.0 &&
                left.sum_w.(k) <> 0.0 &&
                right.sum_w.(k_1) <> 0.0
             then (
@@ -664,13 +756,13 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
 
           (* compute the cumulative sums *)
           for lk = 1 to last do
-            left.sum_n.(lk) <- left.sum_n.(lk-1) +  agg.sum_n.(lk);
+            left.sum_n.(lk) <- left.sum_n.(lk-1) +. agg.sum_n.(lk);
             left.sum_z.(lk) <- left.sum_z.(lk-1) +. agg.sum_z.(lk);
             left.sum_w.(lk) <- left.sum_w.(lk-1) +. agg.sum_w.(lk);
             left.sum_l.(lk) <- left.sum_l.(lk-1) +. agg.sum_l.(lk);
 
             let rk = cardinality - lk - 1 in
-            right.sum_n.(rk) <- right.sum_n.(rk+1) +  agg.sum_n.(rk);
+            right.sum_n.(rk) <- right.sum_n.(rk+1) +. agg.sum_n.(rk);
             right.sum_z.(rk) <- right.sum_z.(rk+1) +. agg.sum_z.(rk);
             right.sum_w.(rk) <- right.sum_w.(rk+1) +. agg.sum_w.(rk);
             right.sum_l.(rk) <- right.sum_l.(rk+1) +. agg.sum_l.(rk);
@@ -686,8 +778,8 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
             (* we can only have a split when the left and right
                approximations are based on one or more observations *)
 
-            if left_n > 0 &&
-               right_n > 0 &&
+            if left_n > 0.0 &&
+               right_n > 0.0 &&
                left.sum_w.(k) <> 0.0 &&
                right.sum_w.(k+1) <> 0.0
             then (
@@ -755,75 +847,71 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
           done;
           !best_split
 
-    method metrics mem =
-      let wrk_tt = ref 0 in
-      let wrk_tf = ref 0 in
-      let wrk_ft = ref 0 in
-      let wrk_ff = ref 0 in
+    method metrics ~in_set ~out_set =
+      let wrk_tt = ref 0.0 in
+      let wrk_tf = ref 0.0 in
+      let wrk_ft = ref 0.0 in
+      let wrk_ff = ref 0.0 in
       let wrk_loss = ref 0.0 in
-      let wrk_nn = ref 0 in
+      let wrk_nn = ref 0.0 in
 
-      let val_tt = ref 0 in
-      let val_tf = ref 0 in
-      let val_ft = ref 0 in
-      let val_ff = ref 0 in
+      let val_tt = ref 0.0 in
+      let val_tf = ref 0.0 in
+      let val_ft = ref 0.0 in
+      let val_ff = ref 0.0 in
       let val_loss = ref 0.0 in
-      let val_nn = ref 0 in
+      let val_nn = ref 0.0 in
 
-      for i = 0 to n-1 do
-        if mem i then
+      for i = 0 to n_rows - 1 do
+        if in_set.(i) then
           (* working folds *)
-          let cell =
-            match y.(i) >= 0.0, f.(i) >= 0.0 with
-              | true , true  -> wrk_tt
-              | true , false -> wrk_tf
-              | false, true  -> wrk_ft
-              | false, false -> wrk_ff
+          let cell_p, cell_n =
+            if f.(i) >= 0.0 then wrk_tt, wrk_ft else wrk_tf, wrk_ff
           in
-          incr cell;
-          incr wrk_nn;
-          wrk_loss := !wrk_loss +. l.(i)
-        else
+          let weight_i = weights.(i) in
+          let p = y.(i) in
+          Utils.add_to cell_p (p *. weight_i);
+          Utils.add_to cell_n ((1.0 -. p) *. weight_i);
+          Utils.add_to wrk_nn weight_i;
+          Utils.add_to wrk_loss l.(i)
+        else if out_set.(i) then
           (* validation fold *)
-          let cell =
-            match y.(i) >= 0.0, f.(i) >= 0.0 with
-              | true , true  -> val_tt
-              | true , false -> val_tf
-              | false, true  -> val_ft
-              | false, false -> val_ff
+          let cell_p, cell_n =
+            if f.(i) >= 0.0 then val_tt, val_ft else val_tf, val_ff
           in
-          incr cell;
-          incr val_nn;
-          val_loss := !val_loss +. l.(i)
+          let weight_i = weights.(i) in
+          let p = y.(i) in
+          Utils.add_to cell_p (p *. weight_i);
+          Utils.add_to cell_n ((1.0 -. p) *. weight_i);
+          Utils.add_to val_nn weight_i;
+          Utils.add_to val_loss l.(i)
 
       done;
 
-      if !wrk_nn > 0 && !val_nn > 0 then
-        let wrk_nf = float !wrk_nn in
+      if !wrk_nn > 0.0 && !val_nn > 0.0 then
         let wrk_n = !wrk_nn in
-        let wrk_tt = (float !wrk_tt) /. wrk_nf in
-        let wrk_tf = (float !wrk_tf) /. wrk_nf in
-        let wrk_ft = (float !wrk_ft) /. wrk_nf in
-        let wrk_ff = (float !wrk_ff) /. wrk_nf in
-        let wrk_loss = !wrk_loss /. wrk_nf in
+        let wrk_tt = !wrk_tt /. wrk_n in
+        let wrk_tf = !wrk_tf /. wrk_n in
+        let wrk_ft = !wrk_ft /. wrk_n in
+        let wrk_ff = !wrk_ff /. wrk_n in
+        let wrk_loss = !wrk_loss /. wrk_n in
 
-        let val_nf = float !val_nn in
         let val_n = !val_nn in
-        let val_tt = (float !val_tt) /. val_nf in
-        let val_tf = (float !val_tf) /. val_nf in
-        let val_ft = (float !val_ft) /. val_nf in
-        let val_ff = (float !val_ff) /. val_nf in
-        let val_loss = !val_loss /. val_nf in
+        let val_tt = !val_tt /. val_n in
+        let val_tf = !val_tf /. val_n in
+        let val_ft = !val_ft /. val_n in
+        let val_ff = !val_ff /. val_n in
+        let val_loss = !val_loss /. val_n in
 
         let val_frac_misclassified = val_tf +. val_ft in
         assert ( val_frac_misclassified >= 0. );
 
         let has_converged = val_frac_misclassified = 0.0 in
 
-        let s_wrk = Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+        let s_wrk = Printf.sprintf "% 8.2f %.4e %.4e %.4e %.4e %.4e"
             wrk_n wrk_loss wrk_tt wrk_tf wrk_ft wrk_ff in
 
-        let s_val = Printf.sprintf "% 8d %.4e %.4e %.4e %.4e %.4e"
+        let s_val = Printf.sprintf "% 8.2f %.4e %.4e %.4e %.4e %.4e"
             val_n val_loss val_tt val_tf val_ft val_ff in
 
         Loss.( {s_wrk; s_val; has_converged; val_loss} )
@@ -832,22 +920,22 @@ class splitter max_gamma_opt binarization_threshold_opt y_feature n =
         raise EmptyFold
 
     method first_tree set : Model_t.l_tree =
-      assert (Array.length set = n);
-      let n_true = ref 0 in
-      let n_false = ref 0 in
-      for i = 0 to n-1 do
+      assert (Array.length set = n_rows);
+      let n_true = ref 0.0 in
+      let n_false = ref 0.0 in
+      for i = 0 to n_rows - 1 do
         if set.(i) then
-          match y.(i) with
-            |  1.0 -> incr n_true
-            | -1.0 -> incr n_false
-            | _ -> assert false
+          let p = y.(i) in
+          let weight_i = weights.(i) in
+          Utils.add_to n_true (p *. weight_i);
+          Utils.add_to n_false ((1.0 -. p) *. weight_i);
       done;
       let n_true = !n_true in
       let n_false = !n_false in
-      if n_false = 0 || n_true = 0 then
+      if n_false = 0.0 || n_true = 0.0 then
         raise Loss.BadTargetDistribution
       else
-        let gamma0 = 0.5 *. (log (float n_true /. float n_false)) in
+        let gamma0 = 0.5 *. (log (n_true /. n_false)) in
         `Leaf gamma0
 
     method write_model trees features out_buf =

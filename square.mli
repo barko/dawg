@@ -1,1 +1,1 @@
-class splitter : float option -> Feat.afeature -> int -> Loss.splitter
+class splitter : float option -> float array -> Feat.afeature -> int -> int -> Loss.splitter

@@ -23,8 +23,10 @@ let find a v =
 
 let find_x a v =
   let n = Array.length a in
-  if n < 2 then
+  if n = 0 then
     raise Not_found
+  else if n = 1 then
+    0
   else if v < a.(0) then
     0
   else
