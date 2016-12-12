@@ -493,14 +493,16 @@ class splitter max_gamma_opt weights y_feature n_rows num_observations =
 
       for i = 0 to n_rows - 1 do
         if in_set.(i) then (
-          Utils.add_to wrk_nn weights.(i);
-          Utils.add_to wrk_loss l.(i);
+          let wi = weights.(i) in
+          Utils.add_to wrk_nn wi;
+          Utils.add_to wrk_loss (wi *. l.(i));
           (* Utils.pr "[DEBUG] in_set i=%d w=%f l=%f z=%f wrk_nn=%f wrk_loss=%f\n%!" *)
           (*   i weights.(i) l.(i) z.(i) !wrk_nn !wrk_loss *)
         )
         else if out_set.(i) then (
-          Utils.add_to val_nn weights.(i);
-          Utils.add_to val_loss l.(i);
+          let wi = weights.(i) in
+          Utils.add_to val_nn wi;
+          Utils.add_to val_loss (wi *. l.(i));
           (* Utils.pr "[DEBUG] out_set i=%d w=%f l=%f z=%f val_nn=%f val_loss=%f\n%!" *)
           (*   i weights.(i) l.(i) z.(i) !val_nn !val_loss *)
         )
